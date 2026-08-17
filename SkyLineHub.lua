@@ -15,8 +15,6 @@
     библиотека обращается к Players.LocalPlayer.PlayerGui, которого нет на сервере.
 ]]
 
-local SkyLineHub = {}
-
 -- ============================================================
 -- MODULE: Utils/Theme.lua
 -- ============================================================
@@ -26,7 +24,7 @@ local Theme = (function()
 	Theme.Colors = {
 		Background      = Color3.fromHex("223145"),
 		Border          = Color3.fromHex("344153"),
-		AccentLight     = Color3.fromHex("3A4C66"), -- светлее фона, для активных элементов
+		AccentLight     = Color3.fromHex("3A4C66"),
 		PanelBackground = Color3.fromHex("223145"),
 		PanelBorder     = Color3.fromHex("344153"),
 
@@ -38,7 +36,6 @@ local Theme = (function()
 		VioletBlue      = Color3.fromRGB(129, 140, 248),
 	}
 
-	-- Палитра свечения по краям экрана (используется AuroraGlow для случайного перехода оттенков)
 	Theme.GlowPalette = {
 		Theme.Colors.Indigo,
 		Theme.Colors.SkyBlue,
@@ -60,8 +57,6 @@ local Animation = (function()
 
 	local Animation = {}
 
-	-- Стандартные пресеты плавности, используемые всей библиотекой.
-	-- Quad/Quart дают мягкое ускорение-замедление без резких рывков.
 	Animation.Presets = {
 		Smooth      = TweenInfo.new(0.28, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out),
 		SmoothSlow  = TweenInfo.new(0.45, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out),
@@ -72,14 +67,12 @@ local Animation = (function()
 		Highlight   = TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
 	}
 
-	-- Запускает твин и возвращает объект Tween (не блокирует поток).
 	function Animation.Play(instance, tweenInfo, properties)
 		local tween = TweenService:Create(instance, tweenInfo, properties)
 		tween:Play()
 		return tween
 	end
 
-	-- Запускает твин и ждёт его завершения (для последовательных цепочек анимаций).
 	function Animation.PlayYield(instance, tweenInfo, properties)
 		local tween = TweenService:Create(instance, tweenInfo, properties)
 		tween:Play()
@@ -87,7 +80,6 @@ local Animation = (function()
 		return tween
 	end
 
-	-- Цепочка твинов, идущих строго последовательно (используется в интро-анимациях).
 	function Animation.Sequence(steps)
 		task.spawn(function()
 			for _, step in ipairs(steps) do
@@ -99,7 +91,6 @@ local Animation = (function()
 		end)
 	end
 
-	-- Параллельная группа твинов, стартующих одновременно и синхронно (масштаб+альфа+позиция).
 	function Animation.Group(entries)
 		local tweens = {}
 		for _, entry in ipairs(entries) do
@@ -108,8 +99,6 @@ local Animation = (function()
 		return tweens
 	end
 
-	-- Плавная линейная интерполяция значения через Heartbeat — используется для волны загрузки
-	-- и для скользящей подсветки навигации, где нужен полный контроль над кадром.
 	function Animation.Loop(callback)
 		local connection
 		connection = game:GetService("RunService").Heartbeat:Connect(function(dt)
@@ -175,7 +164,6 @@ local Icons = (function()
 		return holder
 	end
 
-	-- Home: домик из двух линий-скатов + прямоугольник-основание
 	function Icons.Home(parent, color)
 		local holder = container()
 		holder.Parent = parent
@@ -202,7 +190,6 @@ local Icons = (function()
 		return holder
 	end
 
-	-- Settings: кольцо (шестерня упрощённо) + внутренняя точка
 	function Icons.Settings(parent, color)
 		local holder = container()
 		holder.Parent = parent
@@ -220,7 +207,6 @@ local Icons = (function()
 		c.CornerRadius = UDim.new(1, 0)
 		c.Parent = dot
 
-		-- зубцы шестерни: 4 коротких штриха вокруг кольца
 		for i = 0, 3 do
 			local angle = i * 90
 			newLine(holder, UDim2.fromOffset(4, 2), UDim2.fromScale(0.5, 0.5), angle, color).Position =
@@ -230,7 +216,6 @@ local Icons = (function()
 		return holder
 	end
 
-	-- Inventory: прямоугольник с ручкой сверху (сумка)
 	function Icons.Inventory(parent, color)
 		local holder = container()
 		holder.Parent = parent
@@ -254,7 +239,6 @@ local Icons = (function()
 		return holder
 	end
 
-	-- Stats: три столбика возрастающей высоты
 	function Icons.Stats(parent, color)
 		local holder = container()
 		holder.Parent = parent
@@ -277,7 +261,6 @@ local Icons = (function()
 		return holder
 	end
 
-	-- Chat: скруглённый прямоугольник с "хвостиком"
 	function Icons.Chat(parent, color)
 		local holder = container()
 		holder.Parent = parent
@@ -301,7 +284,6 @@ local Icons = (function()
 		return holder
 	end
 
-	-- Info: кольцо + вертикальная линия + точка (буква i)
 	function Icons.Info(parent, color)
 		local holder = container()
 		holder.Parent = parent
@@ -331,8 +313,6 @@ end)()
 -- MODULE: LoadingScreen.lua
 -- ============================================================
 local LoadingScreen = (function()
-	local TweenService = game:GetService("TweenService")
-
 	local Animation = Animation
 	local Theme = Theme
 
@@ -349,7 +329,6 @@ local LoadingScreen = (function()
 		self._connection = nil
 		self._destroyed = false
 
-		-- Корневой контейнер экрана загрузки, изначально невидимый (альфа=1, масштаб=0)
 		local root = Instance.new("Frame")
 		root.Name = "SkyLineLoadingScreen"
 		root.Size = UDim2.fromOffset(340, 200)
@@ -370,12 +349,10 @@ local LoadingScreen = (function()
 		stroke.Transparency = 1
 		stroke.Parent = root
 
-		-- Масштаб от 0 до 100% через UIScale, синхронно с прозрачностью фона
 		local scale = Instance.new("UIScale")
 		scale.Scale = 0
 		scale.Parent = root
 
-		-- Заголовок — главный визуальный элемент экрана
 		local title = Instance.new("TextLabel")
 		title.Name = "Title"
 		title.Size = UDim2.new(1, -20, 0, 44)
@@ -389,7 +366,6 @@ local LoadingScreen = (function()
 		title.TextTransparency = 1
 		title.Parent = root
 
-		-- Тонкая декоративная подпись под заголовком
 		local subtitle = Instance.new("TextLabel")
 		subtitle.Name = "Subtitle"
 		subtitle.Size = UDim2.new(1, -20, 0, 20)
@@ -403,7 +379,6 @@ local LoadingScreen = (function()
 		subtitle.TextTransparency = 1
 		subtitle.Parent = root
 
-		-- Контейнер волнового индикатора внизу окна
 		local waveHolder = Instance.new("Frame")
 		waveHolder.Name = "Wave"
 		waveHolder.Size = UDim2.fromOffset(DOT_COUNT * DOT_GAP, DOT_SIZE)
@@ -437,7 +412,6 @@ local LoadingScreen = (function()
 		return self
 	end
 
-	-- Появление экрана: масштаб 0→100% и прозрачность синхронно, без резких скачков
 	function LoadingScreen:PlayIntro()
 		Animation.Play(self.Scale, Animation.Presets.Entrance, {Scale = 1})
 		Animation.Play(self.Root, Animation.Presets.Entrance, {BackgroundTransparency = 0.05})
@@ -459,11 +433,9 @@ local LoadingScreen = (function()
 		end)
 	end
 
-	-- Волна: непрерывная синусоида прозрачности/масштаба, бегущая слева направо и обратно.
-	-- Реализовано через Heartbeat, а не серию Tween'ов — даёт истинно непрерывное движение фазы.
 	function LoadingScreen:_startWave()
 		local phase = 0
-		local speed = 2.4 -- скорость движения гребня волны
+		local speed = 2.4
 
 		self._connection = Animation.Loop(function(dt)
 			if self._destroyed then
@@ -472,10 +444,8 @@ local LoadingScreen = (function()
 			phase = phase + dt * speed
 
 			for i, dot in ipairs(self.Dots) do
-				-- Гребень волны как синусоида, зависящая от позиции точки и времени.
-				-- math.sin с bounce по направлению даёт эффект "туда-обратно" без разрывов.
-				local wavePos = (math.sin(phase) + 1) / 2 -- 0..1, куда сейчас направлен гребень
-				local dotPos = (i - 1) / (DOT_COUNT - 1)   -- 0..1, позиция точки в ряду
+				local wavePos = (math.sin(phase) + 1) / 2
+				local dotPos = (i - 1) / (DOT_COUNT - 1)
 				local distance = math.abs(dotPos - wavePos)
 				local intensity = math.clamp(1 - distance * 2.2, 0, 1)
 
@@ -487,7 +457,6 @@ local LoadingScreen = (function()
 		end)
 	end
 
-	-- Плавное затемнение и скрытие экрана загрузки после завершения инициализации
 	function LoadingScreen:PlayOutro(onComplete)
 		if self._connection then
 			self._connection:Disconnect()
@@ -535,8 +504,6 @@ local AuroraGlow = (function()
 	local AuroraGlow = {}
 	AuroraGlow.__index = AuroraGlow
 
-	-- Четыре свечения по краям (верх/низ/лево/право), каждое — крупный размытый
-	-- прямоугольник за пределами экрана с радиальным затуханием через UIGradient.
 	local EDGES = {
 		{name = "Top",    size = UDim2.new(1.4, 0, 0, 260), position = UDim2.new(-0.2, 0, 0, -160), rotation = 0},
 		{name = "Bottom", size = UDim2.new(1.4, 0, 0, 260), position = UDim2.new(-0.2, 0, 1, -100), rotation = 0},
@@ -563,12 +530,11 @@ local AuroraGlow = (function()
 			glow.Size = edge.size
 			glow.Position = edge.position
 			glow.BackgroundColor3 = Theme.Colors.Indigo
-			glow.BackgroundTransparency = 1 -- скрыто до PlayIntro
+			glow.BackgroundTransparency = 1
 			glow.BorderSizePixel = 0
 			glow.ZIndex = 0
 			glow.Parent = root
 
-			-- Радиальное затухание к центру экрана: свечение сильное у края, исчезает вглубь
 			local gradient = Instance.new("UIGradient")
 			local isVertical = edge.name == "Left" or edge.name == "Right"
 			gradient.Rotation = isVertical and 0 or 90
@@ -588,8 +554,6 @@ local AuroraGlow = (function()
 		return self
 	end
 
-	-- Плавное появление свечения после завершения загрузки (сначала экран темнеет — это
-	-- делает вызывающий код через фон окна/бэкдропа, здесь только сам эффект свечения)
 	function AuroraGlow:PlayIntro()
 		for _, glow in pairs(self._glows) do
 			Animation.Play(glow, Animation.Presets.SmoothSlow, {BackgroundTransparency = 0.55})
@@ -597,15 +561,14 @@ local AuroraGlow = (function()
 		self:_startColorCycle()
 	end
 
-	-- Медленный случайный переход между индиго/голубым/сине-фиолетовым для каждого края
-	-- независимо, что создаёт живое, немеханическое ощущение движения цвета.
 	function AuroraGlow:_startColorCycle()
 		for _, glow in pairs(self._glows) do
 			task.spawn(function()
-				while not self._destroyed do
+				while not self._destroyed and glow.Parent do
 					local nextColor = Theme.GlowPalette[math.random(1, #Theme.GlowPalette)]
+					if self._destroyed then break end
 					Animation.PlayYield(glow, Animation.Presets.Glow, {BackgroundColor3 = nextColor})
-					task.wait(math.random(10, 25) / 10) -- пауза 1.0–2.5с перед следующим переходом
+					task.wait(math.random(10, 25) / 10)
 				end
 			end)
 		end
@@ -636,7 +599,6 @@ local Window = (function()
 		self.Tabs = {}
 		self.ActiveTab = nil
 
-		-- Контейнер, задающий финальную позицию окна (центр экрана)
 		local anchor = Instance.new("Frame")
 		anchor.Name = "SkyLineWindowAnchor"
 		anchor.Size = WINDOW_SIZE
@@ -665,10 +627,9 @@ local Window = (function()
 		stroke.Parent = root
 
 		local scale = Instance.new("UIScale")
-		scale.Scale = 0.92 -- лёгкое увеличение при появлении (не с нуля, как экран загрузки)
+		scale.Scale = 0.92
 		scale.Parent = root
 
-		-- Панель навигации крепится слева, контентная область — оставшееся пространство
 		local navSlot = Instance.new("Frame")
 		navSlot.Name = "NavSlot"
 		navSlot.Size = UDim2.new(0, 84, 1, -24)
@@ -695,8 +656,6 @@ local Window = (function()
 		return self
 	end
 
-	-- Появление сверху: позиция смещается вниз из-за верхнего края, масштаб растёт,
-	-- прозрачность падает — всё тремя параллельными твинами одного TweenInfo.
 	function Window:PlayIntro()
 		self.Anchor.Visible = true
 
@@ -736,22 +695,13 @@ local Navigation = (function()
 	Navigation.__index = Navigation
 
 	local BUTTON_SIZE = 52
-	local BUTTON_GAP = 20 -- расстояние между кнопками "больше среднего"
-
-	-- Порядок вкладок по умолчанию. Home — первая, активна по умолчанию.
-	local DEFAULT_ITEMS = {
-		{id = "Home",      icon = "Home"},
-		{id = "Inventory",  icon = "Inventory"},
-		{id = "Stats",      icon = "Stats"},
-		{id = "Chat",       icon = "Chat"},
-		{id = "Settings",   icon = "Settings"},
-		{id = "Info",       icon = "Info"},
-	}
+	local BUTTON_GAP = 20
 
 	function Navigation.new(parentSlot, onSelect)
 		local self = setmetatable({}, Navigation)
 		self._onSelect = onSelect
 		self._buttons = {}
+		self._tabCount = 0
 		self._activeId = nil
 
 		local root = Instance.new("Frame")
@@ -776,7 +726,6 @@ local Navigation = (function()
 		scale.Scale = 0.94
 		scale.Parent = root
 
-		-- Единая подсветка, перемещаемая между кнопками (не принадлежит ни одной из них)
 		local highlight = Instance.new("Frame")
 		highlight.Name = "Highlight"
 		highlight.Size = UDim2.fromOffset(BUTTON_SIZE, BUTTON_SIZE)
@@ -803,16 +752,13 @@ local Navigation = (function()
 		self.Scale = scale
 		self.Highlight = highlight
 
-		for order, item in ipairs(DEFAULT_ITEMS) do
-			self:_createButton(item, order)
-		end
-
-		-- Активная вкладка по умолчанию — Home (первая в списке), без анимации перемещения
-		task.defer(function()
-			self:_setActiveInstant(DEFAULT_ITEMS[1].id)
-		end)
-
 		return self
+	end
+
+	function Navigation:AddTab(id, icon)
+		if self._buttons[id] then return end
+		self._tabCount = self._tabCount + 1
+		self:_createButton({id = id, icon = icon or "Home"}, self._tabCount)
 	end
 
 	function Navigation:_createButton(item, order)
@@ -821,16 +767,14 @@ local Navigation = (function()
 		button.Text = ""
 		button.AutoButtonColor = false
 		button.Size = UDim2.fromOffset(BUTTON_SIZE, BUTTON_SIZE)
-		button.BackgroundTransparency = 1 -- собственной подсветки у кнопки нет
+		button.BackgroundTransparency = 1
 		button.BorderSizePixel = 0
 		button.LayoutOrder = order
 		button.ZIndex = 2
 		button.Parent = self.Root
 
-		local iconBuilder = Icons[item.icon]
-		if iconBuilder then
-			iconBuilder(button, Theme.Colors.TextSecondary)
-		end
+		local iconBuilder = Icons[item.icon] or Icons.Home
+		iconBuilder(button, Theme.Colors.TextSecondary)
 
 		self._buttons[item.id] = {instance = button, icon = button:FindFirstChildWhichIsA("Frame")}
 
@@ -847,31 +791,37 @@ local Navigation = (function()
 		end)
 	end
 
-	-- Перемещает единую подсветку к указанной кнопке по траектории панели (плавно)
 	function Navigation:_moveHighlightTo(id)
 		local entry = self._buttons[id]
 		if not entry then
 			return
 		end
+		
+		-- Расчет позиционирования подсветки на основе AbsolutePosition
+		local relX = entry.instance.AbsolutePosition.X - self.Root.AbsolutePosition.X
+		local relY = entry.instance.AbsolutePosition.Y - self.Root.AbsolutePosition.Y
+
 		Animation.Play(self.Highlight, Animation.Presets.Highlight, {
-			Position = entry.instance.Position,
+			Position = UDim2.fromOffset(relX, relY),
 			BackgroundTransparency = 0.15,
 		})
 	end
 
-	-- Устанавливает активную кнопку мгновенно (используется только при инициализации)
 	function Navigation:_setActiveInstant(id)
 		local entry = self._buttons[id]
 		if not entry then
 			return
 		end
 		self._activeId = id
-		self.Highlight.Position = entry.instance.Position
-		self.Highlight.BackgroundTransparency = 0.15
+		
+		task.defer(function()
+			local relX = entry.instance.AbsolutePosition.X - self.Root.AbsolutePosition.X
+			local relY = entry.instance.AbsolutePosition.Y - self.Root.AbsolutePosition.Y
+			self.Highlight.Position = UDim2.fromOffset(relX, relY)
+			self.Highlight.BackgroundTransparency = 0.15
+		end)
 	end
 
-	-- Переключение активной вкладки: подсветка фиксируется на новой кнопке,
-	-- предыдущая деактивируется, движение непрерывное (без скачков — тот же твин Highlight)
 	function Navigation:SetActive(id)
 		if self._activeId == id then
 			return
@@ -889,7 +839,6 @@ local Navigation = (function()
 		end
 	end
 
-	-- Появление панели: выезд из-за левого края + увеличение + прозрачность, одновременно
 	function Navigation:PlayIntro()
 		local finalPos = self.Root.Position
 		self.Root.Position = UDim2.new(finalPos.X.Scale, finalPos.X.Offset - 40, finalPos.Y.Scale, finalPos.Y.Offset)
@@ -978,6 +927,7 @@ local CompToggle = (function()
 		config = config or {}
 		local self = setmetatable({}, Toggle)
 		self.Value = config.Default or false
+		self.Callback = config.Callback
 
 		local root = Instance.new("Frame")
 		root.Name = "Toggle"
@@ -1078,7 +1028,9 @@ local CompSlider = (function()
 		self.Min = config.Min or 0
 		self.Max = config.Max or 100
 		self.Value = math.clamp(config.Default or self.Min, self.Min, self.Max)
+		self.Callback = config.Callback
 		self._dragging = false
+		self._connections = {}
 
 		local root = Instance.new("Frame")
 		root.Name = "Slider"
@@ -1150,35 +1102,42 @@ local CompSlider = (function()
 		self.ValueLabel = valueLabel
 
 		local function updateFromInputX(inputX)
+			if track.AbsoluteSize.X == 0 then return end
 			local relative = math.clamp((inputX - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
 			local newValue = math.floor(self.Min + relative * (self.Max - self.Min) + 0.5)
 			self:Set(newValue)
 		end
 
-		knob.InputBegan:Connect(function(input)
+		table.insert(self._connections, knob.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				self._dragging = true
 			end
-		end)
+		end))
 
-		UserInputService.InputChanged:Connect(function(input)
+		table.insert(self._connections, UserInputService.InputChanged:Connect(function(input)
 			if self._dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 				updateFromInputX(input.Position.X)
 			end
-		end)
+		end))
 
-		UserInputService.InputEnded:Connect(function(input)
+		table.insert(self._connections, UserInputService.InputEnded:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				self._dragging = false
 			end
-		end)
+		end))
 
-		track.InputBegan:Connect(function(input)
+		table.insert(self._connections, track.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				updateFromInputX(input.Position.X)
 				self._dragging = true
 			end
-		end)
+		end))
+
+		table.insert(self._connections, root.Destroying:Connect(function()
+			for _, conn in ipairs(self._connections) do
+				conn:Disconnect()
+			end
+		end))
 
 		return self
 	end
@@ -1216,6 +1175,7 @@ local CompDropdown = (function()
 		local self = setmetatable({}, Dropdown)
 		self.Options = config.Options or {}
 		self.Value = config.Default or self.Options[1]
+		self.Callback = config.Callback
 		self._open = false
 
 		local root = Instance.new("Frame")
@@ -1354,6 +1314,7 @@ local CompTextBox = (function()
 	function TextBox.new(parent, order, config)
 		config = config or {}
 		local self = setmetatable({}, TextBox)
+		self.Callback = config.Callback
 
 		local root = Instance.new("Frame")
 		root.Name = "TextBox"
@@ -1641,7 +1602,6 @@ local CompTab = (function()
 	function Tab:Show()
 		self.Root.Visible = true
 		self.Root.Position = UDim2.fromOffset(0, 8)
-		self.Root.GroupTransparency = 0
 		Animation.Play(self.Root, Animation.Presets.Smooth, {Position = UDim2.fromOffset(0, 0)})
 	end
 
@@ -1696,7 +1656,6 @@ local CompNotification = (function()
 		config = config or {}
 		local self = setmetatable({}, Notification)
 
-		-- Контейнер уведомлений создаётся один раз и переиспользуется (хранится в parentGui)
 		local container = parentGui:FindFirstChild("SkyLineNotifications")
 		if not container then
 			container = Instance.new("Frame")
@@ -1834,41 +1793,37 @@ local Main = (function()
 		return self
 	end
 
-	-- Внутренний класс WindowHandle: то, что возвращается из CreateWindow.
-	-- Держит ссылку на вкладки и панель навигации, чтобы CreateTab и переключение
-	-- вкладок работали через одну и ту же таблицу состояния.
 	local WindowHandle = {}
 	WindowHandle.__index = WindowHandle
 
-	function WindowHandle.new(screenGui, window)
+	function WindowHandle.new(screenGui, window, navigation)
 		local self = setmetatable({}, WindowHandle)
 		self._screenGui = screenGui
 		self._window = window
-		self._tabs = {}       -- id -> Tab
-		self._navigation = nil
+		self._navigation = navigation
+		self._tabs = {}
 		self._defaultShown = false
 		return self
 	end
 
-	-- Создаёт вкладку и сразу регистрирует её в общей таблице, которую использует
-	-- как переключатель Navigation, так и логика "показать Home по умолчанию".
-	function WindowHandle:CreateTab(name)
+	function WindowHandle:CreateTab(name, icon)
 		name = name or "Tab"
 		local tab = Tab.new(self._window:GetContentSlot(), name)
 		self._tabs[name] = tab
 
-		if name == "Home" and not self._defaultShown then
+		if self._navigation then
+			self._navigation:AddTab(name, icon)
+		end
+
+		if not self._defaultShown then
 			self._defaultShown = true
 			tab:Show()
+			if self._navigation then
+				self._navigation:_setActiveInstant(name)
+			end
 		end
 
 		return tab
-	end
-
-	-- Привязывает уже созданную панель навигации к этому окну (вызывается из CreateWindow
-	-- после того, как панель асинхронно появится по завершении интро-анимаций).
-	function WindowHandle:_attachNavigation(navigation)
-		self._navigation = navigation
 	end
 
 	function WindowHandle:_showTab(id)
@@ -1885,8 +1840,6 @@ local Main = (function()
 		return Notification.new(self._screenGui, config)
 	end
 
-	-- Создаёт главное окно интерфейса. Запускает полную последовательность:
-	-- экран загрузки -> затемнение -> свечение по краям -> появление панели/окна -> вкладка Home.
 	function SkyLineHub:CreateWindow()
 		if self._windowCreated then
 			warn("SkyLine Hub: CreateWindow вызван повторно — возвращается уже существующее окно.")
@@ -1896,13 +1849,17 @@ local Main = (function()
 
 		local loadingScreen = LoadingScreen.new(self.ScreenGui)
 		local window = Window.new(self.ScreenGui)
-		local handle = WindowHandle.new(self.ScreenGui, window)
+		local navigation = Navigation.new(window:GetNavSlot(), function(id)
+			if self._windowHandle then
+				self._windowHandle:_showTab(id)
+			end
+		end)
+
+		local handle = WindowHandle.new(self.ScreenGui, window, navigation)
 		self._windowHandle = handle
 
 		loadingScreen:PlayIntro()
 
-		-- Имитация инициализации библиотеки (в реальном использовании здесь могла бы быть
-		-- реальная асинхронная загрузка данных). Затем — плавный переход к основному интерфейсу.
 		task.delay(1.8, function()
 			loadingScreen:PlayOutro(function()
 				loadingScreen:Destroy()
@@ -1913,12 +1870,7 @@ local Main = (function()
 
 				task.delay(0.25, function()
 					window:PlayIntro()
-
-					local navigation = Navigation.new(window:GetNavSlot(), function(id)
-						handle:_showTab(id)
-					end)
 					navigation:PlayIntro()
-					handle:_attachNavigation(navigation)
 				end)
 			end)
 		end)
@@ -1926,7 +1878,6 @@ local Main = (function()
 		return handle
 	end
 
-	-- Показывает уведомление, не привязанное к конкретному окну (доступно ещё до CreateWindow).
 	function SkyLineHub:Notify(config)
 		return Notification.new(self.ScreenGui, config)
 	end
