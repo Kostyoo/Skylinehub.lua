@@ -1,622 +1,781 @@
 --[[
-    SkyLine Hub - UI Library for Roblox
-    Version: 1.0.1 (Fixed)
+    SkyLine Hub UI Library
+    Version: 1.0.0
+    Author: SkyLine Team
+    Description: Production-ready UI library for Roblox exploits
 ]]
 
-local SkyLine = {}
-SkyLine.__index = SkyLine
-
--- ============================================================
--- CONSTANTS & CONFIGURATION
--- ============================================================
-
-local CONFIG = {
-    Font = Enum.Font.Gotham,
-    FontBold = Enum.Font.GothamBold,
-    FontSource = Enum.Font.SourceSans, -- Исправлено!
-    
+-- ============================================
+-- CONFIGURATION
+-- ============================================
+local SkyLineConfig = {
+    Fonts = {
+        Main = Enum.Font.Gotham,
+        Bold = Enum.Font.GothamBold,
+        Medium = Enum.Font.GothamMedium,
+        Semibold = Enum.Font.GothamSemibold
+    },
     Colors = {
-        Main = Color3.fromRGB(34, 49, 69),
+        Background = Color3.fromRGB(34, 49, 69),
         Secondary = Color3.fromRGB(52, 65, 83),
         Border = Color3.fromRGB(67, 85, 109),
         Accent = Color3.fromRGB(91, 196, 203),
-        Text = Color3.fromRGB(255, 255, 255),
-        TextDim = Color3.fromRGB(200, 210, 220),
-        Black = Color3.fromRGB(0, 0, 0),
+        AccentDark = Color3.fromRGB(60, 140, 150),
         White = Color3.fromRGB(255, 255, 255),
-        
-        GlowIndigo = Color3.fromRGB(75, 0, 130),
-        GlowCyan = Color3.fromRGB(0, 191, 255),
+        Black = Color3.fromRGB(0, 0, 0),
+        Transparent = Color3.fromRGB(0, 0, 0)
     },
-    
-    Theme = {
-        Default = {
-            Accent = Color3.fromRGB(91, 196, 203),
-            Glow1 = Color3.fromRGB(75, 0, 130),
-            Glow2 = Color3.fromRGB(0, 191, 255),
-        },
-        Purple = {
-            Accent = Color3.fromRGB(186, 85, 211),
-            Glow1 = Color3.fromRGB(138, 43, 226),
-            Glow2 = Color3.fromRGB(216, 191, 216),
-        },
-        Orange = {
-            Accent = Color3.fromRGB(255, 165, 0),
-            Glow1 = Color3.fromRGB(255, 69, 0),
-            Glow2 = Color3.fromRGB(255, 215, 0),
-        },
-    },
-    
-    Spacing = {
-        XS = 4,
-        S = 8,
-        M = 12,
-        L = 16,
-        XL = 24,
-        XXL = 32,
-    },
-    
-    CornerRadius = {
-        Small = UDim.new(0, 6),
-        Medium = UDim.new(0, 10),
-        Large = UDim.new(0, 16),
-        Round = UDim.new(1, 0),
-    },
-    
-    DefaultHeight = 36,
-    DefaultWidth = 180,
+    Animations = {
+        Duration = 0.3,
+        Easing = Enum.EasingStyle.Quad,
+        EasingDirection = Enum.EasingDirection.Out
+    }
 }
 
--- ============================================================
--- UTILITY FUNCTIONS
--- ============================================================
-
+-- ============================================
+-- UTILITY MODULE
+-- ============================================
 local Utility = {}
-SkyLine.Utility = Utility
+Utility.__index = Utility
 
-function Utility:IsAlive(obj)
-    return pcall(function()
-        return obj and obj.Parent ~= nil
-    end) and true or false
-end
-
-function Utility:SafeDestroy(obj)
-    pcall(function()
-        if obj and obj:IsA("Instance") then
-            obj:Destroy()
-        end
-    end)
+function Utility.new()
+    local self = setmetatable({}, Utility)
+    return self
 end
 
 function Utility:Create(className, properties)
     local instance = Instance.new(className)
-    if properties then
-        for k, v in pairs(properties) do
-            pcall(function()
-                instance[k] = v
-            end)
-        end
+    for property, value in pairs(properties or {}) do
+        instance[property] = value
     end
     return instance
 end
 
-function Utility:MakeCorner(radius)
-    return Utility:Create("UICorner", {
-        CornerRadius = radius or CONFIG.CornerRadius.Medium
-    })
+function Utility:CreateUI(className, properties)
+    local instance = self:Create(className, properties)
+    instance.Parent = self.Main
+    return instance
 end
 
-function Utility:MakeGradient(colors, rotation)
-    local gradient = Utility:Create("UIGradient", {
-        Rotation = rotation or 0,
+function Utility:CreateCorner(parent, radius)
+    local corner = self:Create("UICorner", {
+        CornerRadius = UDim.new(radius, 0)
     })
-    
-    if colors then
-        local colorSequence = {}
-        for i, color in ipairs(colors) do
-            table.insert(colorSequence, ColorSequenceKeypoint.new((i - 1) / (#colors - 1), color, color))
-        end
-        gradient.Color = ColorSequence.new(colorSequence)
-    end
-    
+    corner.Parent = parent
+    return corner
+end
+
+function Utility:CreateStroke(parent, color, thickness, transparency)
+    local stroke = self:Create("UIStroke", {
+        Color = color or SkyLineConfig.Colors.Border,
+        Thickness = thickness or 1,
+        Transparency = transparency or 0
+    })
+    stroke.Parent = parent
+    return stroke
+end
+
+function Utility:CreateGradient(parent, color1, color2, rotation)
+    local gradient = self:Create("UIGradient", {
+        Color = ColorSequence.new(color1, color2),
+        Rotation = rotation or 90
+    })
+    gradient.Parent = parent
     return gradient
 end
 
-function Utility:MakeStroke(color, thickness, transparency)
-    return Utility:Create("UIStroke", {
-        Color = color or CONFIG.Colors.Border,
-        Thickness = thickness or 1,
-        Transparency = transparency or 0,
-        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+function Utility:CreateLayout(parent, type, properties)
+    local layout = self:Create(type, properties or {})
+    layout.Parent = parent
+    return layout
+end
+
+function Utility:CreatePADDING(parent, padding)
+    local pad = self:Create("UIPadding", {
+        PaddingTop = UDim.new(0, padding or 0),
+        PaddingBottom = UDim.new(0, padding or 0),
+        PaddingLeft = UDim.new(0, padding or 0),
+        PaddingRight = UDim.new(0, padding or 0)
     })
+    pad.Parent = parent
+    return pad
 end
 
-function Utility:MakeShadow(transparency)
-    return Utility:Create("UIStroke", {
-        Color = Color3.fromRGB(0, 0, 0),
-        Thickness = 1,
-        Transparency = transparency or 0.7,
-        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-    })
+function Utility:CreateConstraint(parent, type, properties)
+    local constraint = self:Create(type, properties or {})
+    constraint.Parent = parent
+    return constraint
 end
 
-function Utility:RoundToNearest(value, step)
-    return math.floor(value / step + 0.5) * step
+function Utility:Tween(object, properties, duration, easing, direction)
+    local tweenInfo = TweenInfo.new(
+        duration or SkyLineConfig.Animations.Duration,
+        easing or SkyLineConfig.Animations.Easing,
+        direction or SkyLineConfig.Animations.EasingDirection
+    )
+    local tween = game:GetService("TweenService"):Create(object, tweenInfo, properties)
+    tween:Play()
+    return tween
 end
 
-function Utility:Clamp(value, min, max)
-    return math.max(min, math.min(max, value))
-end
-
-function Utility:Lerp(a, b, t)
-    return a + (b - a) * t
+function Utility:SafeCall(func, ...)
+    local success, result = pcall(func, ...)
+    if not success then
+        warn("[SkyLine Hub] Error:", result)
+    end
+    return success, result
 end
 
 function Utility:CopyToClipboard(text)
-    pcall(function()
-        setclipboard(text)
+    local success = pcall(function()
+        setclipboard(tostring(text))
     end)
+    return success
 end
 
-function Utility:GetPlayers()
-    return game:GetService("Players"):GetPlayers()
+function Utility:GetMouse()
+    return game:GetService("Players").LocalPlayer:GetMouse()
 end
 
-function Utility:GetLocalPlayer()
-    return game:GetService("Players").LocalPlayer
+function Utility:GetViewportSize()
+    return game:GetService("Players").LocalPlayer:PlayerGui:GetBoundingBox()
 end
 
--- ============================================================
--- ANIMATION SYSTEM
--- ============================================================
+-- ============================================
+-- ANIMATION MODULE
+-- ============================================
+local AnimationManager = {}
+AnimationManager.__index = AnimationManager
 
-local AnimationSystem = {}
-SkyLine.AnimationSystem = AnimationSystem
+function AnimationManager.new()
+    local self = setmetatable({}, AnimationManager)
+    self.ActiveTweens = {}
+    return self
+end
 
-local TweenService = game:GetService("TweenService")
-
-function AnimationSystem:Tween(instance, properties, time, easingStyle, easingDirection)
+function AnimationManager:PlaySlideIn(object, properties, delay)
     local tweenInfo = TweenInfo.new(
-        time or 0.3,
-        easingStyle or Enum.EasingStyle.Quad,
-        easingDirection or Enum.EasingDirection.Out
+        properties.Duration or 0.5,
+        properties.Easing or Enum.EasingStyle.Quad,
+        properties.Direction or Enum.EasingDirection.Out,
+        delay or 0
     )
     
-    return TweenService:Create(instance, tweenInfo, properties)
-end
-
-function AnimationSystem:FadeIn(instance, time)
-    local tween = self:Tween(instance, {
-        Transparency = 0,
-        Scale = 1,
-    }, time or 0.3)
+    local tween = game:GetService("TweenService"):Create(object, tweenInfo, properties.Target)
     tween:Play()
-    return tween
-end
-
-function AnimationSystem:FadeOut(instance, time)
-    local tween = self:Tween(instance, {
-        Transparency = 1,
-        Scale = 0.8,
-    }, time or 0.3)
-    tween:Play()
-    return tween
-end
-
-function AnimationSystem:SlideIn(instance, direction, time)
-    local originalPos = instance.Position
-    local offset = UDim2.new(
-        direction == "Left" and -1 or direction == "Right" and 1 or 0,
-        0,
-        direction == "Up" and -1 or direction == "Down" and 1 or 0,
-        0
-    )
     
-    instance.Position = originalPos + offset
-    instance.Transparency = 1
+    table.insert(self.ActiveTweens, tween)
     
-    local tween = self:Tween(instance, {
-        Position = originalPos,
-        Transparency = 0,
-    }, time or 0.4)
-    tween:Play()
+    tween.Completed:Connect(function()
+        for i, t in ipairs(self.ActiveTweens) do
+            if t == tween then
+                table.remove(self.ActiveTweens, i)
+                break
+            end
+        end
+    end)
+    
     return tween
 end
 
-function AnimationSystem:SlideOut(instance, direction, time)
-    local offset = UDim2.new(
-        direction == "Left" and -1 or direction == "Right" and 1 or 0,
-        0,
-        direction == "Up" and -1 or direction == "Down" and 1 or 0,
-        0
-    )
-    
-    local tween = self:Tween(instance, {
-        Position = instance.Position + offset,
-        Transparency = 1,
-        Scale = 0.8,
-    }, time or 0.3)
-    tween:Play()
-    return tween
+function AnimationManager:CancelAll()
+    for _, tween in ipairs(self.ActiveTweens) do
+        pcall(function() tween:Cancel() end)
+    end
+    self.ActiveTweens = {}
 end
 
-function AnimationSystem:BounceIn(instance, time)
-    instance.Scale = 0.7
-    instance.Transparency = 1
-    
-    local tween = self:Tween(instance, {
-        Scale = 1,
-        Transparency = 0,
-    }, time or 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-    tween:Play()
-    return tween
+-- ============================================
+-- NOTIFICATION MODULE
+-- ============================================
+local NotificationManager = {}
+NotificationManager.__index = NotificationManager
+
+function NotificationManager.new(parent)
+    local self = setmetatable({}, NotificationManager)
+    self.Parent = parent
+    self.Notifications = {}
+    return self
 end
 
--- ============================================================
+function NotificationManager:Show(title, message, duration)
+    local notification = Utility:Create("Frame", {
+        Size = UDim2.new(0, 350, 0, 100),
+        Position = UDim2.new(1, -380, 0, 20),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
+        BorderSizePixel = 0,
+        ZIndex = 999
+    })
+    notification.Parent = self.Parent
+    
+    Utility:CreateCorner(notification, 0.15)
+    Utility:CreateStroke(notification, SkyLineConfig.Colors.Border, 2)
+    
+    local titleLabel = Utility:Create("TextLabel", {
+        Size = UDim2.new(1, -20, 0, 30),
+        Position = UDim2.new(0, 10, 0, 10),
+        BackgroundTransparency = 1,
+        Text = title or "Notification",
+        Font = SkyLineConfig.Fonts.Bold,
+        TextSize = 14,
+        TextColor3 = SkyLineConfig.Colors.White
+    })
+    titleLabel.Parent = notification
+    
+    local messageLabel = Utility:Create("TextLabel", {
+        Size = UDim2.new(1, -20, 0, 50),
+        Position = UDim2.new(0, 10, 0, 40),
+        BackgroundTransparency = 1,
+        Text = message or "",
+        Font = SkyLineConfig.Fonts.Main,
+        TextSize = 12,
+        TextColor3 = SkyLineConfig.Colors.Border,
+        TextWrapped = true
+    })
+    messageLabel.Parent = notification
+    
+    -- Animate in
+    notification.Position = UDim2.new(1, -380, 0, 20)
+    Utility:Tween(notification, {
+        Position = UDim2.new(1, -380, 0, 20)
+    }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    
+    -- Auto destroy
+    game:GetService("Debris"):AddItem(notification, duration or 3)
+end
+
+-- ============================================
 -- LOADING SCREEN
--- ============================================================
-
+-- ============================================
 local LoadingScreen = {}
-SkyLine.LoadingScreen = LoadingScreen
+LoadingScreen.__index = LoadingScreen
 
-function LoadingScreen:Show(parent, onComplete)
-    local screenGui = Utility:Create("ScreenGui", {
-        Name = "SkyLineLoading",
-        Parent = parent,
-        IgnoreGuiInset = true,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-    })
-    
-    local background = Utility:Create("Frame", {
-        Name = "Background",
-        Parent = screenGui,
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundColor3 = CONFIG.Colors.Main,
+function LoadingScreen.new(main)
+    local self = setmetatable({}, LoadingScreen)
+    self.Main = main
+    self.LoadingFrame = nil
+    self.Balls = {}
+    return self
+end
+
+function LoadingScreen:Create()
+    -- Main loading frame
+    self.LoadingFrame = Utility:Create("Frame", {
+        Size = UDim2.new(0, 400, 0, 300),
+        Position = UDim2.new(0.5, -200, 0.5, -150),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
         BorderSizePixel = 0,
+        ZIndex = 1000,
+        Visible = true
     })
-    Utility:MakeCorner(CONFIG.CornerRadius.Small)
+    self.LoadingFrame.Parent = self.Main
     
-    local mainFrame = Utility:Create("Frame", {
-        Name = "MainFrame",
-        Parent = background,
-        Size = UDim2.new(0, 400, 0, 250),
-        Position = UDim2.new(0.5, -200, 0.5, -125),
-        BackgroundColor3 = CONFIG.Colors.Secondary,
-        BorderSizePixel = 0,
-        AnchorPoint = Vector2.new(0.5, 0.5),
-    })
-    Utility:MakeCorner(CONFIG.CornerRadius.Large)
-    Utility:MakeStroke(CONFIG.Colors.Border, 2)
+    Utility:CreateCorner(self.LoadingFrame, 0.15)
+    Utility:CreateStroke(self.LoadingFrame, SkyLineConfig.Colors.Border, 2)
     
+    -- Title
     local title = Utility:Create("TextLabel", {
-        Name = "Title",
-        Parent = mainFrame,
-        Size = UDim2.new(1, 0, 0, 60),
-        Position = UDim2.new(0, 0, 0, 20),
+        Size = UDim2.new(1, 0, 0, 80),
+        Position = UDim2.new(0, 0, 0, 50),
         BackgroundTransparency = 1,
         Text = "SkyLine Hub",
-        TextColor3 = CONFIG.Colors.White,
-        TextSize = 36,
-        Font = CONFIG.FontBold,
-        TextStrokeTransparency = 0.5,
+        Font = SkyLineConfig.Fonts.Bold,
+        TextSize = 40,
+        TextColor3 = SkyLineConfig.Colors.White,
+        TextStrokeTransparency = 0.8,
+        TextStrokeColor3 = SkyLineConfig.Colors.Accent
     })
+    title.Parent = self.LoadingFrame
     
+    -- Subtitle
     local subtitle = Utility:Create("TextLabel", {
-        Name = "Subtitle",
-        Parent = mainFrame,
-        Size = UDim2.new(1, 0, 0, 20),
-        Position = UDim2.new(0, 0, 0, 80),
+        Size = UDim2.new(1, 0, 0, 30),
+        Position = UDim2.new(0, 0, 0, 130),
         BackgroundTransparency = 1,
         Text = "Loading...",
-        TextColor3 = CONFIG.Colors.Accent,
+        Font = SkyLineConfig.Fonts.Main,
         TextSize = 14,
-        Font = CONFIG.Font,
+        TextColor3 = SkyLineConfig.Colors.Border
     })
+    subtitle.Parent = self.LoadingFrame
     
-    -- Loading wave animation
-    local waveContainer = Utility:Create("Frame", {
-        Name = "WaveContainer",
-        Parent = mainFrame,
-        Size = UDim2.new(1, 0, 0, 50),
-        Position = UDim2.new(0, 0, 1, -70),
-        BackgroundTransparency = 1,
+    -- Loading balls wave
+    local ballsContainer = Utility:Create("Frame", {
+        Size = UDim2.new(0, 200, 0, 30),
+        Position = UDim2.new(0.5, -100, 0, 190),
+        BackgroundTransparency = 1
     })
+    ballsContainer.Parent = self.LoadingFrame
     
-    local waveCircles = {}
-    local circleCount = 9
-    
-    for i = 1, circleCount do
-        local circle = Utility:Create("Frame", {
-            Name = "Circle" .. i,
-            Parent = waveContainer,
-            Size = UDim2.new(0, 12, 0, 12),
-            Position = UDim2.new(0, (i - 1) * 32 + 20, 0.5, -6),
-            BackgroundColor3 = CONFIG.Colors.Accent,
-            BorderSizePixel = 0,
+    for i = 1, 9 do
+        local ball = Utility:Create("Frame", {
+            Size = UDim2.new(0, 20, 0, 20),
+            Position = UDim2.new(0, i * 20, 0, 0),
+            BackgroundColor3 = SkyLineConfig.Colors.Accent,
+            BorderSizePixel = 0
         })
-        Utility:MakeCorner(CONFIG.CornerRadius.Round)
-        table.insert(waveCircles, circle)
+        ball.Parent = ballsContainer
+        Utility:CreateCorner(ball, 1)
+        
+        table.insert(self.Balls, ball)
     end
     
-    -- Wave animation loop
-    local waveTask = task.spawn(function()
-        while true do
-            for i, circle in ipairs(waveCircles) do
-                pcall(function()
-                    local tween = TweenService:Create(circle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
-                        Position = UDim2.new(circle.Position.X.Scale, circle.Position.X.Offset, 0.5, -14),
-                        Size = UDim2.new(0, 16, 0, 16),
-                    })
-                    tween:Play()
-                    
-                    task.delay(0.3 / circleCount, function()
-                        pcall(function()
-                            local tweenBack = TweenService:Create(circle, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
-                                Position = UDim2.new(circle.Position.X.Scale, circle.Position.X.Offset, 0.5, -6),
-                                Size = UDim2.new(0, 12, 0, 12),
-                            })
-                            tweenBack:Play()
-                        end)
-                    end)
-                end)
-            end
-            task.wait(0.5)
-        end
-    end)
-    
-    -- Bounce-in animation
-    local bounceTween = AnimationSystem:BounceIn(mainFrame, 0.6)
-    
-    -- Complete loading
-    task.delay(2, function()
-        pcall(function()
-            task.cancel(waveTask)
+    -- Animate loading balls
+    for i, ball in ipairs(self.Balls) do
+        task.delay(i * 0.05, function()
+            Utility:Tween(ball, {
+                Position = UDim2.new(0, i * 20, 0, -10),
+                Size = UDim2.new(0, 25, 0, 25)
+            }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
             
-            local fadeOut = TweenService:Create(screenGui, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                Transparency = 1,
-            })
-            fadeOut:Play()
-            fadeOut.Completed:Connect(function()
-                Utility:SafeDestroy(screenGui)
-                if onComplete then
-                    pcall(onComplete)
-                end
+            task.delay(0.3, function()
+                Utility:Tween(ball, {
+                    Position = UDim2.new(0, i * 20, 0, 0),
+                    Size = UDim2.new(0, 20, 0, 20)
+                }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
             end)
         end)
-    end)
+    end
+    
+    -- Initial animation: scale from 0.7 to 1
+    self.LoadingFrame.Scale = Vector2.new(0.7, 0.7)
+    self.LoadingFrame.Transparency = 1
+    
+    Utility:Tween(self.LoadingFrame, {
+        Scale = Vector2.new(1, 1),
+        Transparency = 0
+    }, 0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 end
 
--- ============================================================
--- GLOW EFFECT SYSTEM
--- ============================================================
+function LoadingScreen:Destroy()
+    if self.LoadingFrame then
+        Utility:Tween(self.LoadingFrame, {
+            Transparency = 1,
+            Scale = Vector2.new(0.7, 0.7)
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        
+        task.delay(0.3, function()
+            self.LoadingFrame:Destroy()
+        end)
+    end
+end
 
-local GlowSystem = {}
-SkyLine.GlowSystem = GlowSystem
+-- ============================================
+-- AMBIENT GLOW EFFECT
+-- ============================================
+local AmbientGlow = {}
+AmbientGlow.__index = AmbientGlow
 
-function GlowSystem:CreateGlow(parent, color1, color2)
-    local glowFrame = Utility:Create("Frame", {
-        Name = "Glow",
-        Parent = parent,
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        ZIndex = -1,
-    })
+function AmbientGlow.new(main)
+    local self = setmetatable({}, AmbientGlow)
+    self.Main = main
+    self.GlowFrames = {}
+    self.Enabled = true
+    return self
+end
+
+function AmbientGlow:Create()
+    -- Create edge glow frames
+    local edges = {
+        {Size = UDim2.new(1, 0, 0, 100), Position = UDim2.new(0, 0, 0, 0), Color = Color3.fromRGB(75, 0, 130)},
+        {Size = UDim2.new(1, 0, 0, 100), Position = UDim2.new(0, 0, 1, -100), Color = Color3.fromRGB(50, 100, 150)},
+        {Size = UDim2.new(0, 100, 1, 0), Position = UDim2.new(0, 0, 0, 0), Color = Color3.fromRGB(100, 50, 150)},
+        {Size = UDim2.new(0, 100, 1, 0), Position = UDim2.new(1, -100, 0, 0), Color = Color3.fromRGB(50, 150, 100)},
+        {Size = UDim2.new(0, 200, 0, 100), Position = UDim2.new(0, -100, 0, 0), Color = Color3.fromRGB(75, 0, 130)},
+        {Size = UDim2.new(0, 200, 0, 100), Position = UDim2.new(1, -100, 0, 0), Color = Color3.fromRGB(50, 100, 150)},
+        {Size = UDim2.new(0, 100, 0, 200), Position = UDim2.new(0, 0, 1, -200), Color = Color3.fromRGB(100, 50, 150)},
+        {Size = UDim2.new(0, 100, 0, 200), Position = UDim2.new(1, -100, 1, -200), Color = Color3.fromRGB(50, 150, 100)}
+    }
     
-    -- Create multiple glow blobs
-    local blobs = {}
-    
-    for i = 1, 8 do
-        local blob = Utility:Create("Frame", {
-            Name = "Blob" .. i,
-            Parent = glowFrame,
-            Size = UDim2.new(0, 300 + i * 40, 0, 300 + i * 40),
-            Position = UDim2.new(
-                math.random(0, 100) / 100,
-                0,
-                math.random(0, 100) / 100,
-                0
-            ),
-            BackgroundColor3 = i % 2 == 0 and color1 or color2,
+    for i, edge in ipairs(edges) do
+        local glowFrame = Utility:Create("Frame", {
+            Size = edge.Size,
+            Position = edge.Position,
+            BackgroundColor3 = edge.Color,
             BorderSizePixel = 0,
-            Transparency = 0.85,
+            ZIndex = 0,
+            Transparency = 0.8,
+            BackgroundTransparency = 0.8
         })
-        Utility:MakeCorner(CONFIG.CornerRadius.Round)
-        table.insert(blobs, blob)
+        glowFrame.Parent = self.Main
+        
+        -- Soften with gradient
+        local gradient = Utility:Create("UIGradient", {
+            Color = ColorSequence.new(edge.Color, Color3.fromRGB(0, 0, 0)),
+            Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.9),
+                NumberSequenceKeypoint.new(1, 1)
+            })
+        })
+        gradient.Parent = glowFrame
+        
+        table.insert(self.GlowFrames, glowFrame)
+        
+        -- Animate glow
+        task.delay(i * 0.2, function()
+            self:AnimateGlow(glowFrame, edge.Color)
+        end)
     end
+end
+
+function AmbientGlow:AnimateGlow(frame, baseColor)
+    if not self.Enabled then return end
     
-    -- Animate blobs
-    local animationTask = task.spawn(function()
-        while true do
-            for i, blob in ipairs(blobs) do
-                pcall(function()
-                    local scale = 0.5 + (i % 3) * 0.3
-                    local position = UDim2.new(
-                        math.random(-10, 110) / 100,
-                        0,
-                        math.random(-10, 110) / 100,
-                        0
-                    )
-                    
-                    local tween = TweenService:Create(blob, TweenInfo.new(4 + i, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-                        Position = position,
-                        Size = UDim2.new(0, 200 + i * 30, 0, 200 + i * 30),
-                        Transparency = 0.7 + math.random() * 0.2,
-                    })
-                    tween:Play()
-                end)
+    local targetColor = baseColor:Lerp(SkyLineConfig.Colors.Accent, 0.3)
+    
+    Utility:Tween(frame, {
+        Transparency = 0.5,
+        BackgroundColor3 = targetColor
+    }, 2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+    
+    task.delay(2, function()
+        if not frame.Parent then return end
+        Utility:Tween(frame, {
+            Transparency = 0.8,
+            BackgroundColor3 = baseColor
+        }, 2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+        
+        task.delay(2, function()
+            self:AnimateGlow(frame, baseColor)
+        end)
+    end)
+end
+
+function AmbientGlow:SetEnabled(enabled)
+    self.Enabled = enabled
+    if not enabled then
+        for _, frame in ipairs(self.GlowFrames) do
+            frame.Transparency = 1
+        end
+    else
+        for i, frame in ipairs(self.GlowFrames) do
+            frame.Transparency = 0.8
+            task.delay(i * 0.2, function()
+                self:AnimateGlow(frame, frame.BackgroundColor3)
+            end)
+        end
+    end
+end
+
+-- ============================================
+-- NAVIGATION BAR
+-- ============================================
+local NavigationBar = {}
+NavigationBar.__index = NavigationBar
+
+function NavigationBar.new(main)
+    local self = setmetatable({}, NavigationBar)
+    self.Main = main
+    self.Bar = nil
+    self.Buttons = {}
+    self.ActiveButton = nil
+    self.HighlightFrame = nil
+    return self
+end
+
+function NavigationBar:Create(buttons)
+    -- Main bar frame
+    self.Bar = Utility:Create("Frame", {
+        Size = UDim2.new(0, 60, 0, 450),
+        Position = UDim2.new(0, 20, 0.5, -225),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
+        BorderSizePixel = 0,
+        ZIndex = 10,
+        Visible = false
+    })
+    self.Bar.Parent = self.Main
+    
+    Utility:CreateCorner(self.Bar, 0.15)
+    Utility:CreateStroke(self.Bar, SkyLineConfig.Colors.Border, 2)
+    
+    -- Highlight frame (moves between buttons)
+    self.HighlightFrame = Utility:Create("Frame", {
+        Size = UDim2.new(1, -10, 0, 50),
+        Position = UDim2.new(0, 5, 0, 10),
+        BackgroundColor3 = SkyLineConfig.Colors.Secondary,
+        BorderSizePixel = 0,
+        Transparency = 0.8
+    })
+    self.HighlightFrame.Parent = self.Bar
+    Utility:CreateCorner(self.HighlightFrame, 0.2)
+    
+    -- Create buttons
+    local yPos = 10
+    for i, buttonData in ipairs(buttons) do
+        local button = Utility:Create("TextButton", {
+            Size = UDim2.new(1, -10, 0, 50),
+            Position = UDim2.new(0, 5, 0, yPos),
+            BackgroundTransparency = 1,
+            Text = "",
+            BorderSizePixel = 0,
+            ZIndex = 11
+        })
+        button.Parent = self.Bar
+        
+        -- Icon
+        local icon = Utility:Create("ImageLabel", {
+            Size = UDim2.new(0, 30, 0, 30),
+            Position = UDim2.new(0.5, -15, 0.5, -15),
+            BackgroundTransparency = 1,
+            Image = buttonData.ImageId,
+            ImageColor3 = SkyLineConfig.Colors.White,
+            ZIndex = 12
+        })
+        icon.Parent = button
+        
+        -- Store button data
+        table.insert(self.Buttons, {
+            Button = button,
+            Icon = icon,
+            Data = buttonData
+        })
+        
+        -- Button click
+        button.MouseButton1Click:Connect(function()
+            self:SetActiveButton(i)
+            if buttonData.Callback then
+                Utility:SafeCall(buttonData.Callback)
             end
-            task.wait(4)
-        end
-    end)
+        end)
+        
+        -- Hover effect
+        button.MouseEnter:Connect(function()
+            if self.ActiveButton ~= i then
+                -- Highlight moves to hovered button
+                self:MoveHighlight(i, 0.2)
+            end
+        end)
+        
+        button.MouseLeave:Connect(function()
+            if self.ActiveButton then
+                self:MoveHighlight(self.ActiveButton, 0.2)
+            end
+        end)
+        
+        yPos = yPos + 60
+    end
     
-    return glowFrame, animationTask
-end
-
-function GlowSystem:DisableHeavyEffects()
-    return CONFIG.DisableHeavyEffects or false
-end
-
--- ============================================================
--- CORE UI COMPONENT
--- ============================================================
-
-local UIComponent = {}
-UIComponent.__index = UIComponent
-
-function UIComponent:CreateElement(className, properties)
-    return Utility:Create(className, properties)
-end
-
-function UIComponent:AddCorner(radius)
-    return Utility:MakeCorner(radius)
-end
-
-function UIComponent:AddStroke(color, thickness)
-    return Utility:MakeStroke(color, thickness)
-end
-
-function UIComponent:AddGradient(colors, rotation)
-    return Utility:MakeGradient(colors, rotation)
-end
-
-function UIComponent:AddShadow()
-    return Utility:MakeShadow()
-end
-
-function UIComponent:OnMouseEnter(callback)
-    if self.Instance then
-        self.Instance.MouseEnter:Connect(function()
-            pcall(callback)
-        end)
+    -- Set initial active button (first)
+    if #self.Buttons > 0 then
+        self:SetActiveButton(1)
     end
 end
 
-function UIComponent:OnMouseLeave(callback)
-    if self.Instance then
-        self.Instance.MouseLeave:Connect(function()
-            pcall(callback)
-        end)
-    end
-end
-
-function UIComponent:OnClick(callback)
-    if self.Instance then
-        self.Instance.MouseButton1Click:Connect(function()
-            pcall(callback)
-        end)
-    end
-end
-
-function UIComponent:SetText(text)
-    pcall(function()
-        if self.Instance:IsA("TextLabel") or self.Instance:IsA("TextButton") then
-            self.Instance.Text = text
+function NavigationBar:SetActiveButton(index)
+    if index < 1 or index > #self.Buttons then return end
+    
+    self.ActiveButton = index
+    
+    -- Update button colors
+    for i, btnData in ipairs(self.Buttons) do
+        if i == index then
+            btnData.Icon.ImageColor3 = SkyLineConfig.Colors.Accent
+        else
+            btnData.Icon.ImageColor3 = SkyLineConfig.Colors.White
         end
+    end
+    
+    -- Move highlight
+    self:MoveHighlight(index, 0.3)
+end
+
+function NavigationBar:MoveHighlight(index, duration)
+    if not self.HighlightFrame then return end
+    
+    local button = self.Buttons[index]
+    if button then
+        Utility:Tween(self.HighlightFrame, {
+            Position = UDim2.new(0, 5, 0, button.Button.Position.Y.Offset + 5)
+        }, duration or 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    end
+end
+
+function NavigationBar:Show()
+    if not self.Bar then return end
+    
+    self.Bar.Visible = true
+    self.Bar.Position = UDim2.new(0, -80, 0.5, -225)
+    self.Bar.Transparency = 0.8
+    self.Bar.Scale = Vector2.new(0.95, 0.95)
+    
+    Utility:Tween(self.Bar, {
+        Position = UDim2.new(0, 20, 0.5, -225),
+        Transparency = 0,
+        Scale = Vector2.new(1, 1)
+    }, 0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+end
+
+function NavigationBar:Hide()
+    if not self.Bar then return end
+    
+    Utility:Tween(self.Bar, {
+        Position = UDim2.new(0, -80, 0.5, -225),
+        Transparency = 0.8,
+        Scale = Vector2.new(0.95, 0.95)
+    }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    
+    task.delay(0.3, function()
+        self.Bar.Visible = false
     end)
 end
 
-function UIComponent:SetVisible(visible)
-    pcall(function()
-        self.Instance.Visible = visible
-    end)
+-- ============================================
+-- TAB MANAGER
+-- ============================================
+local TabManager = {}
+TabManager.__index = TabManager
+
+function TabManager.new(main)
+    local self = setmetatable({}, TabManager)
+    self.Main = main
+    self.Tabs = {}
+    self.ActiveTab = nil
+    self.TabContainer = nil
+    return self
 end
 
-function UIComponent:SetPosition(position)
-    pcall(function()
-        self.Instance.Position = position
-    end)
+function TabManager:CreateTab(id, name, contentFrame)
+    local tab = {
+        Id = id,
+        Name = name,
+        ContentFrame = contentFrame,
+        Visible = false
+    }
+    
+    self.Tabs[id] = tab
+    return tab
 end
 
-function UIComponent:SetSize(size)
-    pcall(function()
-        self.Instance.Size = size
-    end)
-end
-
-function UIComponent:SetBackgroundColor(color)
-    pcall(function()
-        self.Instance.BackgroundColor3 = color
-    end)
-end
-
-function UIComponent:SetTextColor(color)
-    pcall(function()
-        if self.Instance:IsA("TextLabel") or self.Instance:IsA("TextButton") then
-            self.Instance.TextColor3 = color
+function TabManager:SwitchTab(id, direction)
+    if not self.Tabs[id] then return end
+    
+    local oldTab = self.ActiveTab
+    local newTab = self.Tabs[id]
+    
+    if oldTab == id then return end
+    
+    if oldTab and self.Tabs[oldTab] then
+        -- Hide old tab
+        local oldFrame = self.Tabs[oldTab].ContentFrame
+        if direction == "down" then
+            Utility:Tween(oldFrame, {
+                Position = UDim2.new(0, 0, 0, 20),
+                Transparency = 1,
+                Scale = Vector2.new(0.95, 0.95)
+            }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        else
+            Utility:Tween(oldFrame, {
+                Position = UDim2.new(0, 0, 0, -20),
+                Transparency = 1,
+                Scale = Vector2.new(0.95, 0.95)
+            }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
         end
-    end)
+        
+        task.delay(0.3, function()
+            oldFrame.Visible = false
+        end)
+    end
+    
+    -- Show new tab
+    local newFrame = newTab.ContentFrame
+    newFrame.Visible = true
+    
+    if direction == "down" then
+        newFrame.Position = UDim2.new(0, 0, 0, -20)
+        Utility:Tween(newFrame, {
+            Position = UDim2.new(0, 0, 0, 0),
+            Transparency = 0,
+            Scale = Vector2.new(1, 1)
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    else
+        newFrame.Position = UDim2.new(0, 0, 0, 20)
+        Utility:Tween(newFrame, {
+            Position = UDim2.new(0, 0, 0, 0),
+            Transparency = 0,
+            Scale = Vector2.new(1, 1)
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    end
+    
+    self.ActiveTab = id
 end
 
--- ============================================================
--- TOGGLE COMPONENT
--- ============================================================
+-- ============================================
+-- UI COMPONENTS
+-- ============================================
 
+-- Toggle Component
 local Toggle = {}
 Toggle.__index = Toggle
-setmetatable(Toggle, { __index = UIComponent })
 
-function Toggle.new(parent, title, defaultState, callback)
+function Toggle.new(parent, properties)
     local self = setmetatable({}, Toggle)
+    self.Parent = parent
+    self.Properties = properties or {}
+    self.Value = self.Properties.Default or false
+    self.Title = self.Properties.Title or "Toggle"
+    self.Callback = self.Properties.Callback or function() end
     
-    self.Title = title or "Toggle"
-    self.Value = defaultState or false
-    self.Callback = callback
-    
-    -- Main container
-    self.Instance = Utility:Create("TextButton", {
-        Name = "Toggle_" .. self.Title,
-        Parent = parent,
-        Size = UDim2.new(1, -20, 0, CONFIG.DefaultHeight + 8),
-        BackgroundColor3 = CONFIG.Colors.Secondary,
+    -- Create main frame
+    self.Frame = Utility:Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 50),
+        BackgroundColor3 = SkyLineConfig.Colors.Secondary,
         BorderSizePixel = 0,
-        Text = "",
-        AutoButtonColor = false,
+        ZIndex = 5
     })
-    Utility:MakeCorner(CONFIG.CornerRadius.Medium)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
+    self.Frame.Parent = self.Parent
+    Utility:CreateCorner(self.Frame, 0.15)
     
     -- Title label
     self.TitleLabel = Utility:Create("TextLabel", {
-        Name = "Title",
-        Parent = self.Instance,
-        Size = UDim2.new(1, -80, 1, 0),
+        Size = UDim2.new(0.6, 0, 1, 0),
         Position = UDim2.new(0, 15, 0, 0),
         BackgroundTransparency = 1,
         Text = self.Title,
-        TextColor3 = CONFIG.Colors.White,
+        Font = SkyLineConfig.Fonts.Main,
         TextSize = 14,
-        Font = CONFIG.Font,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextColor3 = SkyLineConfig.Colors.White,
+        TextXAlignment = Enum.TextXAlignment.Left
     })
+    self.TitleLabel.Parent = self.Frame
     
-    -- Toggle background
-    self.ToggleBackground = Utility:Create("Frame", {
-        Name = "ToggleBG",
-        Parent = self.Instance,
-        Size = UDim2.new(0, 45, 0, 22),
-        Position = UDim2.new(1, -60, 0.5, -11),
-        BackgroundColor3 = CONFIG.Colors.Main,
+    -- Switch background
+    self.SwitchBg = Utility:Create("Frame", {
+        Size = UDim2.new(0, 50, 0, 25),
+        Position = UDim2.new(1, -70, 0.5, -12.5),
+        BackgroundColor3 = SkyLineConfig.Colors.Secondary,
         BorderSizePixel = 0,
+        ZIndex = 6
     })
-    Utility:MakeCorner(CONFIG.CornerRadius.Round)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
+    self.SwitchBg.Parent = self.Frame
+    Utility:CreateCorner(self.SwitchBg, 1)
+    Utility:CreateStroke(self.SwitchBg, SkyLineConfig.Colors.Border, 1)
     
-    -- Toggle knob
-    self.ToggleKnob = Utility:Create("Frame", {
-        Name = "ToggleKnob",
-        Parent = self.ToggleBackground,
-        Size = UDim2.new(0, 18, 0, 18),
-        Position = UDim2.new(0, 2, 0.5, -9),
-        BackgroundColor3 = CONFIG.Colors.White,
+    -- Knob
+    self.Knob = Utility:Create("Frame", {
+        Size = UDim2.new(0, 20, 0, 20),
+        Position = UDim2.new(0, 3, 0.5, -10),
+        BackgroundColor3 = SkyLineConfig.Colors.Border,
         BorderSizePixel = 0,
+        ZIndex = 7
     })
-    Utility:MakeCorner(CONFIG.CornerRadius.Round)
+    self.Knob.Parent = self.SwitchBg
+    Utility:CreateCorner(self.Knob, 1)
     
-    -- Click handler
-    self.Instance.MouseButton1Click:Connect(function()
-        self:Toggle()
+    -- Click detection
+    self.SwitchBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            self:Toggle()
+        end
     end)
     
+    -- Frame click also toggles
+    self.Frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            self:Toggle()
+        end
+    end)
+    
+    -- Initialize state
     self:UpdateVisual()
     
     return self
@@ -625,359 +784,290 @@ end
 function Toggle:Toggle()
     self.Value = not self.Value
     self:UpdateVisual()
-    
-    if self.Callback then
-        pcall(self.Callback, self.Value)
-    end
+    Utility:SafeCall(self.Callback, self.Value)
 end
 
-function Toggle:Set(value)
+function Toggle:SetValue(value)
     self.Value = value
     self:UpdateVisual()
 end
 
-function Toggle:UpdateVisual()
-    local targetColor = self.Value and CONFIG.Colors.Accent or CONFIG.Colors.Main
-    local targetPosition = self.Value and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
-    
-    local tween = TweenService:Create(self.ToggleBackground, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-        BackgroundColor3 = targetColor,
-    })
-    tween:Play()
-    
-    local knobTween = TweenService:Create(self.ToggleKnob, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-        Position = targetPosition,
-    })
-    knobTween:Play()
-    
-    -- Update stroke color
-    local stroke = self.Instance:FindFirstChildOfClass("UIStroke")
-    if stroke then
-        local strokeTween = TweenService:Create(stroke, TweenInfo.new(0.2), {
-            Color = self.Value and CONFIG.Colors.Accent or CONFIG.Colors.Border,
-        })
-        strokeTween:Play()
-    end
-end
-
--- ============================================================
--- SLIDER COMPONENT
--- ============================================================
-
-local Slider = {}
-Slider.__index = Slider
-setmetatable(Slider, { __index = UIComponent })
-
-function Slider.new(parent, title, min, max, default, callback)
-    local self = setmetatable({}, Slider)
-    
-    self.Title = title or "Slider"
-    self.Min = min or 0
-    self.Max = max or 100
-    self.Value = default or min
-    self.Callback = callback
-    
-    -- Main container
-    self.Instance = Utility:Create("TextButton", {
-        Name = "Slider_" .. self.Title,
-        Parent = parent,
-        Size = UDim2.new(1, -20, 0, CONFIG.DefaultHeight + 8),
-        BackgroundColor3 = CONFIG.Colors.Secondary,
-        BorderSizePixel = 0,
-        Text = "",
-        AutoButtonColor = false,
-    })
-    Utility:MakeCorner(CONFIG.CornerRadius.Medium)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
-    
-    -- Title label
-    self.TitleLabel = Utility:Create("TextLabel", {
-        Name = "Title",
-        Parent = self.Instance,
-        Size = UDim2.new(0, 100, 1, 0),
-        Position = UDim2.new(0, 15, 0, 0),
-        BackgroundTransparency = 1,
-        Text = self.Title,
-        TextColor3 = CONFIG.Colors.White,
-        TextSize = 14,
-        Font = CONFIG.Font,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    })
-    
-    -- Slider background
-    self.SliderBackground = Utility:Create("Frame", {
-        Name = "SliderBG",
-        Parent = self.Instance,
-        Size = UDim2.new(0, 100, 0, 6),
-        Position = UDim2.new(1, -120, 0.5, -3),
-        BackgroundColor3 = CONFIG.Colors.Main,
-        BorderSizePixel = 0,
-    })
-    Utility:MakeCorner(CONFIG.CornerRadius.Round)
-    
-    -- Slider fill
-    self.SliderFill = Utility:Create("Frame", {
-        Name = "SliderFill",
-        Parent = self.SliderBackground,
-        Size = UDim2.new(0, 0, 1, 0),
-        BackgroundColor3 = CONFIG.Colors.Accent,
-        BorderSizePixel = 0,
-    })
-    Utility:MakeCorner(CONFIG.CornerRadius.Round)
-    Utility:MakeGradient({
-        CONFIG.Colors.Secondary,
-        CONFIG.Colors.Accent,
-    }, 90)
-    
-    -- Slider knob
-    self.SliderKnob = Utility:Create("Frame", {
-        Name = "SliderKnob",
-        Parent = self.SliderBackground,
-        Size = UDim2.new(0, 14, 0, 14),
-        Position = UDim2.new(0, 0, 0.5, -7),
-        BackgroundColor3 = CONFIG.Colors.White,
-        BorderSizePixel = 0,
-    })
-    Utility:MakeCorner(CONFIG.CornerRadius.Round)
-    
-    -- Value label
-    self.ValueLabel = Utility:Create("TextLabel", {
-        Name = "Value",
-        Parent = self.Instance,
-        Size = UDim2.new(0, 40, 1, 0),
-        Position = UDim2.new(1, -170, 0, 0),
-        BackgroundTransparency = 1,
-        Text = tostring(self.Value),
-        TextColor3 = CONFIG.Colors.Accent,
-        TextSize = 12,
-        Font = CONFIG.Font,
-        TextXAlignment = Enum.TextXAlignment.Right,
-    })
-    
-    -- Drag logic
-    local dragging = false
-    
-    self.Instance.MouseButton1Down:Connect(function()
-        dragging = true
-        self.Instance:SetAttribute("Dragging", true)
-    end)
-    
-    self.Instance.MouseButton1Up:Connect(function()
-        dragging = false
-        self.Instance:SetAttribute("Dragging", false)
-    end)
-    
-    self.Instance.MouseMoved:Connect(function(input)
-        if dragging then
-            local sliderPos = self.SliderBackground.AbsolutePosition
-            local sliderSize = self.SliderBackground.AbsoluteSize
-            local mouseX = input.Position.X
-            local relativeX = (mouseX - sliderPos.X) / sliderSize.X
-            relativeX = Utility:Clamp(relativeX, 0, 1)
-            
-            local value = self.Min + (self.Max - self.Min) * relativeX
-            self:SetValue(value)
-        end
-    end)
-    
-    -- Initialize
-    self:SetValue(default or min)
-    
-    return self
-end
-
-function Slider:SetValue(value)
-    value = Utility:Clamp(value, self.Min, self.Max)
-    self.Value = value
-    
-    local percent = (value - self.Min) / (self.Max - self.Min)
-    local fillWidth = percent * 100
-    local knobX = percent * 86
-    
-    local fillTween = TweenService:Create(self.SliderFill, TweenInfo.new(0.15), {
-        Size = UDim2.new(fillWidth / 100, 0, 1, 0),
-    })
-    fillTween:Play()
-    
-    local knobTween = TweenService:Create(self.SliderKnob, TweenInfo.new(0.15), {
-        Position = UDim2.new(knobX / 86, 0, 0.5, -7),
-    })
-    knobTween:Play()
-    
-    self.ValueLabel.Text = tostring(math.floor(value * 10) / 10)
-    
-    if self.Callback then
-        pcall(self.Callback, value)
-    end
-end
-
-function Slider:GetValue()
+function Toggle:GetValue()
     return self.Value
 end
 
--- ============================================================
--- DROPDOWN COMPONENT
--- ============================================================
+function Toggle:UpdateVisual()
+    if self.Value then
+        Utility:Tween(self.SwitchBg, {
+            BackgroundColor3 = SkyLineConfig.Colors.Accent
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        
+        Utility:Tween(self.Knob, {
+            Position = UDim2.new(1, -23, 0.5, -10),
+            BackgroundColor3 = SkyLineConfig.Colors.White
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    else
+        Utility:Tween(self.SwitchBg, {
+            BackgroundColor3 = SkyLineConfig.Colors.Secondary
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        
+        Utility:Tween(self.Knob, {
+            Position = UDim2.new(0, 3, 0.5, -10),
+            BackgroundColor3 = SkyLineConfig.Colors.Border
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    end
+end
 
+-- Slider Component
+local Slider = {}
+Slider.__index = Slider
+
+function Slider.new(parent, properties)
+    local self = setmetatable({}, Slider)
+    self.Parent = parent
+    self.Properties = properties or {}
+    self.Title = self.Properties.Title or "Slider"
+    self.Min = self.Properties.Min or 0
+    self.Max = self.Properties.Max or 100
+    self.Value = self.Properties.Default or self.Min
+    self.Callback = self.Properties.Callback or function() end
+    self.Decimal = self.Properties.Decimal or 0
+    
+    -- Create main frame
+    self.Frame = Utility:Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 60),
+        BackgroundColor3 = SkyLineConfig.Colors.Secondary,
+        BorderSizePixel = 0,
+        ZIndex = 5
+    })
+    self.Frame.Parent = self.Parent
+    Utility:CreateCorner(self.Frame, 0.15)
+    
+    -- Title
+    self.TitleLabel = Utility:Create("TextLabel", {
+        Size = UDim2.new(0.5, 0, 0, 25),
+        Position = UDim2.new(0, 15, 0, 8),
+        BackgroundTransparency = 1,
+        Text = self.Title,
+        Font = SkyLineConfig.Fonts.Main,
+        TextSize = 14,
+        TextColor3 = SkyLineConfig.Colors.White,
+        TextXAlignment = Enum.TextXAlignment.Left
+    })
+    self.TitleLabel.Parent = self.Frame
+    
+    -- Value display
+    self.ValueLabel = Utility:Create("TextLabel", {
+        Size = UDim2.new(0.2, 0, 0, 25),
+        Position = UDim2.new(1, -80, 0, 8),
+        BackgroundTransparency = 1,
+        Text = tostring(self.Value),
+        Font = SkyLineConfig.Fonts.Bold,
+        TextSize = 14,
+        TextColor3 = SkyLineConfig.Colors.Accent,
+        TextXAlignment = Enum.TextXAlignment.Right
+    })
+    self.ValueLabel.Parent = self.Frame
+    
+    -- Slider background
+    self.SliderBg = Utility:Create("Frame", {
+        Size = UDim2.new(1, -30, 0, 8),
+        Position = UDim2.new(0, 15, 0, 40),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
+        BorderSizePixel = 0,
+        ZIndex = 6
+    })
+    self.SliderBg.Parent = self.Frame
+    Utility:CreateCorner(self.SliderBg, 1)
+    
+    -- Fill
+    self.SliderFill = Utility:Create("Frame", {
+        Size = UDim2.new(0, 0, 1, 0),
+        BackgroundColor3 = SkyLineConfig.Colors.Accent,
+        BorderSizePixel = 0,
+        ZIndex = 7
+    })
+    self.SliderFill.Parent = self.SliderBg
+    Utility:CreateCorner(self.SliderFill, 1)
+    
+    -- Gradient on fill
+    local fillGradient = Utility:Create("UIGradient", {
+        Color = ColorSequence.new(
+            SkyLineConfig.Colors.AccentDark,
+            SkyLineConfig.Colors.Accent
+        ),
+        Rotation = 90
+    })
+    fillGradient.Parent = self.SliderFill
+    
+    -- Knob
+    self.Knob = Utility:Create("Frame", {
+        Size = UDim2.new(0, 20, 0, 20),
+        Position = UDim2.new(0, -10, 0.5, -10),
+        BackgroundColor3 = SkyLineConfig.Colors.White,
+        BorderSizePixel = 0,
+        ZIndex = 8
+    })
+    self.Knob.Parent = self.SliderBg
+    Utility:CreateCorner(self.Knob, 1)
+    Utility:CreateStroke(self.Knob, SkyLineConfig.Colors.Border, 2)
+    
+    -- Dragging
+    local dragging = false
+    
+    self.SliderBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            self:UpdateFromMouse()
+        end
+    end)
+    
+    self.SliderBg.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    game:GetService("RunService").RenderStepped:Connect(function()
+        if dragging then
+            self:UpdateFromMouse()
+        end
+    end)
+    
+    -- Update initial visual
+    self:UpdateVisual()
+    
+    return self
+end
+
+function Slider:UpdateFromMouse()
+    local mouse = Utility:GetMouse()
+    local relativeX = mouse.X - self.SliderBg.AbsolutePosition.X
+    local width = self.SliderBg.AbsoluteSize.X
+    
+    local percentage = math.clamp(relativeX / width, 0, 1)
+    local newValue = self.Min + (self.Max - self.Min) * percentage
+    
+    if self.Decimal > 0 then
+        newValue = math.floor(newValue * (10^self.Decimal)) / (10^self.Decimal)
+    else
+        newValue = math.floor(newValue + 0.5)
+    end
+    
+    self.Value = newValue
+    self.ValueLabel.Text = tostring(self.Value)
+    
+    self:UpdateVisual()
+    Utility:SafeCall(self.Callback, self.Value)
+end
+
+function Slider:UpdateVisual()
+    if not self.SliderFill then return end
+    
+    local percentage = (self.Value - self.Min) / (self.Max - self.Min)
+    local width = self.SliderBg.AbsoluteSize.X * percentage
+    
+    Utility:Tween(self.SliderFill, {
+        Size = UDim2.new(0, width, 1, 0)
+    }, 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    
+    Utility:Tween(self.Knob, {
+        Position = UDim2.new(0, width - 10, 0.5, -10)
+    }, 0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+end
+
+-- Dropdown Component
 local Dropdown = {}
 Dropdown.__index = Dropdown
-setmetatable(Dropdown, { __index = UIComponent })
 
-function Dropdown.new(parent, title, items, defaultIndex, callback)
+function Dropdown.new(parent, properties)
     local self = setmetatable({}, Dropdown)
+    self.Parent = parent
+    self.Properties = properties or {}
+    self.Title = self.Properties.Title or "Dropdown"
+    self.Options = self.Properties.Options or {}
+    self.Value = self.Properties.Default or self.Options[1] or ""
+    self.Callback = self.Properties.Callback or function() end
+    self.Open = false
+    self.DropdownFrame = nil
     
-    self.Title = title or "Dropdown"
-    self.Items = items or {}
-    self.Callback = callback
-    self.SelectedIndex = defaultIndex or 1
-    self.IsOpen = false
-    
-    -- Main container
-    self.Instance = Utility:Create("TextButton", {
-        Name = "Dropdown_" .. self.Title,
-        Parent = parent,
-        Size = UDim2.new(1, -20, 0, CONFIG.DefaultHeight + 8),
-        BackgroundColor3 = CONFIG.Colors.Secondary,
+    -- Create main frame
+    self.Frame = Utility:Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 55),
+        BackgroundColor3 = SkyLineConfig.Colors.Secondary,
         BorderSizePixel = 0,
-        Text = "",
-        AutoButtonColor = false,
+        ZIndex = 5
     })
-    Utility:MakeCorner(CONFIG.CornerRadius.Medium)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
+    self.Frame.Parent = self.Parent
+    Utility:CreateCorner(self.Frame, 0.15)
     
-    -- Title label
+    -- Title
     self.TitleLabel = Utility:Create("TextLabel", {
-        Name = "Title",
-        Parent = self.Instance,
-        Size = UDim2.new(0, 120, 1, 0),
+        Size = UDim2.new(0.4, 0, 1, 0),
         Position = UDim2.new(0, 15, 0, 0),
         BackgroundTransparency = 1,
         Text = self.Title,
-        TextColor3 = CONFIG.Colors.White,
+        Font = SkyLineConfig.Fonts.Main,
         TextSize = 14,
-        Font = CONFIG.Font,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextColor3 = SkyLineConfig.Colors.White,
+        TextXAlignment = Enum.TextXAlignment.Left
     })
+    self.TitleLabel.Parent = self.Frame
     
-    -- Selected value label
-    self.SelectedLabel = Utility:Create("TextLabel", {
-        Name = "Selected",
-        Parent = self.Instance,
-        Size = UDim2.new(1, -160, 1, 0),
-        Position = UDim2.new(0, 130, 0, 0),
-        BackgroundTransparency = 1,
-        Text = self.Items[self.SelectedIndex] or "Select...",
-        TextColor3 = CONFIG.Colors.Accent,
+    -- Dropdown button
+    self.DropdownButton = Utility:Create("TextButton", {
+        Size = UDim2.new(0, 150, 0, 35),
+        Position = UDim2.new(1, -170, 0.5, -17.5),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
+        Text = "",
+        Font = SkyLineConfig.Fonts.Main,
         TextSize = 12,
-        Font = CONFIG.Font,
-        TextXAlignment = Enum.TextXAlignment.Right,
+        TextColor3 = SkyLineConfig.Colors.White,
+        BorderSizePixel = 0,
+        ZIndex = 6
     })
+    self.DropdownButton.Parent = self.Frame
+    Utility:CreateCorner(self.DropdownButton, 0.1)
+    Utility:CreateStroke(self.DropdownButton, SkyLineConfig.Colors.Border, 1)
+    
+    -- Current value text
+    self.ValueLabel = Utility:Create("TextLabel", {
+        Size = UDim2.new(1, -30, 1, 0),
+        Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = self.Value,
+        Font = SkyLineConfig.Fonts.Main,
+        TextSize = 12,
+        TextColor3 = SkyLineConfig.Colors.White,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        ZIndex = 7
+    })
+    self.ValueLabel.Parent = self.DropdownButton
     
     -- Arrow
     self.Arrow = Utility:Create("TextLabel", {
-        Name = "Arrow",
-        Parent = self.Instance,
-        Size = UDim2.new(0, 24, 0, 24),
-        Position = UDim2.new(1, -35, 0.5, -12),
+        Size = UDim2.new(0, 20, 0, 20),
+        Position = UDim2.new(1, -25, 0.5, -10),
         BackgroundTransparency = 1,
         Text = "▼",
-        TextColor3 = CONFIG.Colors.White,
+        Font = SkyLineConfig.Fonts.Main,
         TextSize = 10,
-        Font = CONFIG.Font,
+        TextColor3 = SkyLineConfig.Colors.Border,
+        ZIndex = 7
     })
-    
-    -- Dropdown list container
-    self.ListContainer = Utility:Create("ScrollingFrame", {
-        Name = "List",
-        Parent = self.Instance,
-        Size = UDim2.new(0, 200, 0, 0),
-        Position = UDim2.new(1, -220, 1, 5),
-        BackgroundColor3 = CONFIG.Colors.Secondary,
-        BorderSizePixel = 0,
-        Visible = false,
-        ClipsDescendants = true,
-        ScrollBarThickness = 4,
-        ScrollBarImageColor3 = CONFIG.Colors.Accent,
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-    })
-    Utility:MakeCorner(CONFIG.CornerRadius.Medium)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
-    
-    -- List items
-    for i, item in ipairs(self.Items) do
-        local itemButton = Utility:Create("TextButton", {
-            Name = "Item_" .. i,
-            Parent = self.ListContainer,
-            Size = UDim2.new(1, -10, 0, CONFIG.DefaultHeight),
-            Position = UDim2.new(0, 5, 0, (i - 1) * CONFIG.DefaultHeight),
-            BackgroundColor3 = i == self.SelectedIndex and CONFIG.Colors.Main or CONFIG.Colors.Secondary,
-            BorderSizePixel = 0,
-            Text = item,
-            TextColor3 = CONFIG.Colors.White,
-            TextSize = 13,
-            Font = CONFIG.Font,
-            AutoButtonColor = false,
-        })
-        Utility:MakeCorner(CONFIG.CornerRadius.Small)
-        
-        itemButton.MouseButton1Click:Connect(function()
-            self.SelectedIndex = i
-            self.SelectedLabel.Text = item
-            self:Close()
-            
-            if self.Callback then
-                pcall(self.Callback, item, i)
-            end
-        end)
-        
-        itemButton.MouseEnter:Connect(function()
-            local tween = TweenService:Create(itemButton, TweenInfo.new(0.15), {
-                BackgroundColor3 = CONFIG.Colors.Main,
-            })
-            tween:Play()
-        end)
-        
-        itemButton.MouseLeave:Connect(function()
-            local tween = TweenService:Create(itemButton, TweenInfo.new(0.15), {
-                BackgroundColor3 = i == self.SelectedIndex and CONFIG.Colors.Main or CONFIG.Colors.Secondary,
-            })
-            tween:Play()
-        end)
-    end
-    
-    -- Set list height
-    self.ListContainer.Size = UDim2.new(0, 200, 0, math.min(#self.Items * CONFIG.DefaultHeight, 150))
+    self.Arrow.Parent = self.DropdownButton
     
     -- Click handler
-    self.Instance.MouseButton1Click:Connect(function()
-        self:ToggleOpen()
-    end)
-    
-    -- Close on outside click
-    game:GetService("UserInputService").InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            if self.IsOpen and not self.Instance:IsDescendantOf(Utility:GetLocalPlayer().PlayerGui) then
-                -- Check if click is outside dropdown
-                local mousePos = input.Position
-                local absolutePos = self.Instance.AbsolutePosition
-                local absoluteSize = self.Instance.AbsoluteSize
-                
-                local inside = mousePos.X >= absolutePos.X and mousePos.X <= absolutePos.X + absoluteSize.X and
-                              mousePos.Y >= absolutePos.Y and mousePos.Y <= absolutePos.Y + absoluteSize.Y
-                
-                if not inside then
-                    self:Close()
-                end
-            end
-        end
+    self.DropdownButton.MouseButton1Click:Connect(function()
+        self:ToggleDropdown()
     end)
     
     return self
 end
 
-function Dropdown:ToggleOpen()
-    if self.IsOpen then
+function Dropdown:ToggleDropdown()
+    if self.Open then
         self:Close()
     else
         self:Open()
@@ -985,1336 +1075,1221 @@ function Dropdown:ToggleOpen()
 end
 
 function Dropdown:Open()
-    self.IsOpen = true
-    self.ListContainer.Visible = true
+    if self.Open then return end
+    self.Open = true
     
-    -- Update stroke
-    local stroke = self.Instance:FindFirstChildOfClass("UIStroke")
-    if stroke then
-        local tween = TweenService:Create(stroke, TweenInfo.new(0.2), {
-            Color = CONFIG.Colors.Accent,
+    -- Create dropdown list frame
+    self.DropdownFrame = Utility:Create("Frame", {
+        Size = UDim2.new(0, 150, 0, 0),
+        Position = UDim2.new(1, -170, 0, 55),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
+        BorderSizePixel = 0,
+        ZIndex = 100,
+        Visible = true,
+        ClipsDescendants = true
+    })
+    self.DropdownFrame.Parent = self.Frame
+    Utility:CreateCorner(self.DropdownFrame, 0.1)
+    Utility:CreateStroke(self.DropdownFrame, SkyLineConfig.Colors.Accent, 1)
+    
+    -- Scrolling frame
+    local scrollFrame = Utility:Create("ScrollingFrame", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 2,
+        ScrollBarImageColor3 = SkyLineConfig.Colors.Border,
+        ZIndex = 101
+    })
+    scrollFrame.Parent = self.DropdownFrame
+    
+    -- Option buttons
+    local yPos = 0
+    for _, option in ipairs(self.Options) do
+        local optionButton = Utility:Create("TextButton", {
+            Size = UDim2.new(1, 0, 0, 35),
+            Position = UDim2.new(0, 0, 0, yPos),
+            BackgroundTransparency = 1,
+            Text = option,
+            Font = SkyLineConfig.Fonts.Main,
+            TextSize = 12,
+            TextColor3 = SkyLineConfig.Colors.White,
+            BorderSizePixel = 0,
+            ZIndex = 102
         })
-        tween:Play()
+        optionButton.Parent = scrollFrame
+        
+        optionButton.MouseEnter:Connect(function()
+            Utility:Tween(optionButton, {
+                BackgroundColor3 = SkyLineConfig.Colors.Secondary
+            }, 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        end)
+        
+        optionButton.MouseLeave:Connect(function()
+            Utility:Tween(optionButton, {
+                BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            }, 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        end)
+        
+        optionButton.MouseButton1Click:Connect(function()
+            self:SelectOption(option)
+        end)
+        
+        yPos = yPos + 35
     end
     
-    -- Animate arrow
-    local tween = TweenService:Create(self.Arrow, TweenInfo.new(0.2), {
-        Rotation = 180,
-    })
-    tween:Play()
+    -- Set scroll frame size
+    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, yPos)
     
-    -- Animate list appearance
-    self.ListContainer.Size = UDim2.new(0, 200, 0, 0)
-    local tween2 = TweenService:Create(self.ListContainer, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-        Size = UDim2.new(0, 200, 0, math.min(#self.Items * CONFIG.DefaultHeight, 150)),
-    })
-    tween2:Play()
+    -- Animate open
+    Utility:Tween(self.DropdownFrame, {
+        Size = UDim2.new(0, 150, 0, math.min(yPos, 200))
+    }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    
+    -- Animate arrow
+    Utility:Tween(self.Arrow, {
+        Rotation = 180
+    }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 end
 
 function Dropdown:Close()
-    self.IsOpen = false
+    if not self.Open then return end
+    self.Open = false
     
-    -- Update stroke
-    local stroke = self.Instance:FindFirstChildOfClass("UIStroke")
-    if stroke then
-        local tween = TweenService:Create(stroke, TweenInfo.new(0.2), {
-            Color = CONFIG.Colors.Border,
-        })
-        tween:Play()
+    if self.DropdownFrame then
+        Utility:Tween(self.DropdownFrame, {
+            Size = UDim2.new(0, 150, 0, 0)
+        }, 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        
+        task.delay(0.2, function()
+            if self.DropdownFrame then
+                self.DropdownFrame:Destroy()
+                self.DropdownFrame = nil
+            end
+        end)
     end
     
     -- Animate arrow
-    local tween = TweenService:Create(self.Arrow, TweenInfo.new(0.2), {
-        Rotation = 0,
-    })
-    tween:Play()
-    
-    -- Animate list disappearance
-    local tween2 = TweenService:Create(self.ListContainer, TweenInfo.new(0.2), {
-        Size = UDim2.new(0, 200, 0, 0),
-    })
-    tween2:Play()
-    
-    task.delay(0.2, function()
-        if not self.IsOpen then
-            self.ListContainer.Visible = false
-        end
-    end)
+    Utility:Tween(self.Arrow, {
+        Rotation = 0
+    }, 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 end
 
-function Dropdown:AddItem(item)
-    table.insert(self.Items, item)
-    
-    local itemButton = Utility:Create("TextButton", {
-        Name = "Item_" .. #self.Items,
-        Parent = self.ListContainer,
-        Size = UDim2.new(1, -10, 0, CONFIG.DefaultHeight),
-        Position = UDim2.new(0, 5, 0, (#self.Items - 1) * CONFIG.DefaultHeight),
-        BackgroundColor3 = CONFIG.Colors.Secondary,
-        BorderSizePixel = 0,
-        Text = item,
-        TextColor3 = CONFIG.Colors.White,
-        TextSize = 13,
-        Font = CONFIG.Font,
-        AutoButtonColor = false,
-    })
-    Utility:MakeCorner(CONFIG.CornerRadius.Small)
-    
-    itemButton.MouseButton1Click:Connect(function()
-        self.SelectedIndex = #self.Items
-        self.SelectedLabel.Text = item
-        self:Close()
-        
-        if self.Callback then
-            pcall(self.Callback, item, #self.Items)
-        end
-    end)
+function Dropdown:SelectOption(option)
+    self.Value = option
+    self.ValueLabel.Text = option
+    self:Close()
+    Utility:SafeCall(self.Callback, option)
 end
 
--- ============================================================
--- BLOCK (COLLAPSIBLE SECTION) COMPONENT
--- ============================================================
-
+-- Block (Collapsible Section) Component
 local Block = {}
 Block.__index = Block
-setmetatable(Block, { __index = UIComponent })
 
-function Block.new(parent, title, defaultOpen)
+function Block.new(parent, properties)
     local self = setmetatable({}, Block)
+    self.Parent = parent
+    self.Properties = properties or {}
+    self.Title = self.Properties.Title or "Block"
+    self.Open = self.Properties.DefaultOpen or false
+    self.ContentHeight = self.Properties.ContentHeight or 200
+    self.Content = nil
     
-    self.Title = title or "Block"
-    self.IsOpen = defaultOpen or false
-    self.Elements = {}
-    
-    -- Main container
-    self.Instance = Utility:Create("Frame", {
-        Name = "Block_" .. self.Title,
-        Parent = parent,
-        Size = UDim2.new(1, -20, 0, CONFIG.DefaultHeight + 8),
-        BackgroundColor3 = CONFIG.Colors.Secondary,
+    -- Create header frame
+    self.HeaderFrame = Utility:Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 50),
+        BackgroundColor3 = SkyLineConfig.Colors.Secondary,
         BorderSizePixel = 0,
+        ZIndex = 5
     })
-    Utility:MakeCorner(CONFIG.CornerRadius.Medium)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
+    self.HeaderFrame.Parent = self.Parent
+    Utility:CreateCorner(self.HeaderFrame, 0.15)
     
-    -- Header button
-    self.HeaderButton = Utility:Create("TextButton", {
-        Name = "Header",
-        Parent = self.Instance,
-        Size = UDim2.new(1, 0, 0, CONFIG.DefaultHeight),
-        BackgroundTransparency = 1,
-        Text = "",
-        AutoButtonColor = false,
-    })
-    
-    -- Title label
+    -- Title
     self.TitleLabel = Utility:Create("TextLabel", {
-        Name = "Title",
-        Parent = self.HeaderButton,
-        Size = UDim2.new(1, -50, 1, 0),
+        Size = UDim2.new(0.6, 0, 1, 0),
         Position = UDim2.new(0, 15, 0, 0),
         BackgroundTransparency = 1,
         Text = self.Title,
-        TextColor3 = CONFIG.Colors.White,
+        Font = SkyLineConfig.Fonts.Main,
         TextSize = 14,
-        Font = CONFIG.Font,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextColor3 = SkyLineConfig.Colors.White,
+        TextXAlignment = Enum.TextXAlignment.Left
     })
+    self.TitleLabel.Parent = self.HeaderFrame
     
     -- Arrow
     self.Arrow = Utility:Create("TextLabel", {
-        Name = "Arrow",
-        Parent = self.HeaderButton,
-        Size = UDim2.new(0, 24, 0, 24),
-        Position = UDim2.new(1, -30, 0.5, -12),
+        Size = UDim2.new(0, 20, 0, 20),
+        Position = UDim2.new(1, -40, 0.5, -10),
         BackgroundTransparency = 1,
         Text = "▼",
-        TextColor3 = CONFIG.Colors.White,
-        TextSize = 10,
-        Font = CONFIG.Font,
+        Font = SkyLineConfig.Fonts.Main,
+        TextSize = 12,
+        TextColor3 = SkyLineConfig.Colors.Border,
+        ZIndex = 6
     })
-    
-    -- Content container
-    self.Content = Utility:Create("Frame", {
-        Name = "Content",
-        Parent = self.Instance,
-        Size = UDim2.new(1, 0, 0, 0),
-        Position = UDim2.new(0, 0, 0, CONFIG.DefaultHeight),
-        BackgroundTransparency = 1,
-        ClipsDescendants = true,
-    })
+    self.Arrow.Parent = self.HeaderFrame
     
     -- Click handler
-    self.HeaderButton.MouseButton1Click:Connect(function()
-        self:Toggle()
+    self.HeaderFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            self:Toggle()
+        end
     end)
     
-    self:UpdateVisual()
+    -- Content container
+    self.ContentContainer = Utility:Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 0),
+        Position = UDim2.new(0, 0, 0, 50),
+        BackgroundColor3 = SkyLineConfig.Colors.Secondary,
+        BorderSizePixel = 0,
+        ZIndex = 4,
+        Visible = false,
+        ClipsDescendants = true
+    })
+    self.ContentContainer.Parent = self.Parent
+    Utility:CreateCorner(self.ContentContainer, 0.15)
+    Utility:CreateStroke(self.ContentContainer, SkyLineConfig.Colors.Border, 1)
     
     return self
-end
-
-function Block:AddElement(element)
-    table.insert(self.Elements, element)
-    
-    -- Recalculate content height
-    local totalHeight = 0
-    for _, elem in ipairs(self.Elements) do
-        totalHeight = totalHeight + elem.Instance.Size.Y.Offset + 8
-    end
-    
-    self.Content.Size = UDim2.new(1, 0, 0, totalHeight)
-    
-    -- Reposition elements
-    local currentY = 0
-    for _, elem in ipairs(self.Elements) do
-        elem.Instance.Position = UDim2.new(0, 10, 0, currentY)
-        currentY = currentY + elem.Instance.Size.Y.Offset + 8
-    end
-    
-    -- Update block size
-    if self.IsOpen then
-        self.Instance.Size = UDim2.new(1, -20, 0, CONFIG.DefaultHeight + totalHeight + 8)
-    end
-    
-    return element
 end
 
 function Block:Toggle()
-    self.IsOpen = not self.IsOpen
-    self:UpdateVisual()
-end
-
-function Block:Open()
-    self.IsOpen = true
-    self:UpdateVisual()
-end
-
-function Block:Close()
-    self.IsOpen = false
-    self:UpdateVisual()
-end
-
-function Block:UpdateVisual()
-    local contentHeight = self.Content.Size.Y.Offset
-    local targetHeight = self.IsOpen and (CONFIG.DefaultHeight + contentHeight + 8) or CONFIG.DefaultHeight
+    self.Open = not self.Open
     
-    local tween = TweenService:Create(self.Instance, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-        Size = UDim2.new(1, -20, 0, targetHeight),
-    })
-    tween:Play()
-    
-    -- Arrow rotation
-    local tween2 = TweenService:Create(self.Arrow, TweenInfo.new(0.3), {
-        Rotation = self.IsOpen and 180 or 0,
-    })
-    tween2:Play()
-    
-    -- Update stroke
-    local stroke = self.Instance:FindFirstChildOfClass("UIStroke")
-    if stroke then
-        local tween3 = TweenService:Create(stroke, TweenInfo.new(0.2), {
-            Color = self.IsOpen and CONFIG.Colors.Accent or CONFIG.Colors.Border,
-        })
-        tween3:Play()
-    end
-    
-    -- Update block size
-    if self.Instance.Parent then
-        pcall(function()
-            self.Instance.Parent:SetAttribute("BlockChanged", os.clock())
+    if self.Open then
+        self.ContentContainer.Visible = true
+        
+        Utility:Tween(self.Arrow, {
+            Rotation = 180
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        
+        Utility:Tween(self.ContentContainer, {
+            Size = UDim2.new(1, 0, 0, self.ContentHeight)
+        }, 0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    else
+        Utility:Tween(self.Arrow, {
+            Rotation = 0
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        
+        Utility:Tween(self.ContentContainer, {
+            Size = UDim2.new(1, 0, 0, 0)
+        }, 0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        
+        task.delay(0.4, function()
+            self.ContentContainer.Visible = false
         end)
     end
 end
 
--- ============================================================
--- BUTTON COMPONENT
--- ============================================================
+function Block:AddContent(element)
+    if not self.ContentContainer then return end
+    
+    element.Parent = self.ContentContainer
+    -- Position element below previous content
+    local lastChild = self.ContentContainer:GetChildren()
+    local yPos = 5
+    for _, child in ipairs(lastChild) do
+        if child:IsA("Frame") and child ~= self.ContentContainer then
+            yPos = yPos + child.Size.Y.Offset + 5
+        end
+    end
+    
+    element.Position = UDim2.new(0, 5, 0, yPos)
+end
 
+-- Button Component
 local Button = {}
 Button.__index = Button
-setmetatable(Button, { __index = UIComponent })
 
-function Button.new(parent, title, callback, iconId)
+function Button.new(parent, properties)
     local self = setmetatable({}, Button)
+    self.Parent = parent
+    self.Properties = properties or {}
+    self.Title = self.Properties.Title or "Button"
+    self.Callback = self.Properties.Callback or function() end
     
-    self.Title = title or "Button"
-    self.Callback = callback
-    
-    self.Instance = Utility:Create("TextButton", {
-        Name = "Button_" .. self.Title,
-        Parent = parent,
-        Size = UDim2.new(1, -20, 0, CONFIG.DefaultHeight + 8),
-        BackgroundColor3 = CONFIG.Colors.Secondary,
-        BorderSizePixel = 0,
-        Text = "",
-        AutoButtonColor = false,
-    })
-    Utility:MakeCorner(CONFIG.CornerRadius.Medium)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
-    
-    -- Icon (if provided)
-    if iconId then
-        self.Icon = Utility:Create("ImageLabel", {
-            Name = "Icon",
-            Parent = self.Instance,
-            Size = UDim2.new(0, 20, 0, 20),
-            Position = UDim2.new(0, 15, 0.5, -10),
-            BackgroundTransparency = 1,
-            Image = "rbxassetid://" .. iconId,
-        })
-    end
-    
-    -- Title label
-    self.TitleLabel = Utility:Create("TextLabel", {
-        Name = "Title",
-        Parent = self.Instance,
-        Size = UDim2.new(1, -50, 1, 0),
-        Position = UDim2.new(0, iconId and 45 or 15, 0, 0),
-        BackgroundTransparency = 1,
+    -- Create frame
+    self.Frame = Utility:Create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 45),
+        BackgroundColor3 = SkyLineConfig.Colors.Secondary,
         Text = self.Title,
-        TextColor3 = CONFIG.Colors.White,
+        Font = SkyLineConfig.Fonts.Main,
         TextSize = 14,
-        Font = CONFIG.Font,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextColor3 = SkyLineConfig.Colors.White,
+        BorderSizePixel = 0,
+        ZIndex = 5
     })
-    
-    -- Arrow
-    self.Arrow = Utility:Create("TextLabel", {
-        Name = "Arrow",
-        Parent = self.Instance,
-        Size = UDim2.new(0, 24, 0, 24),
-        Position = UDim2.new(1, -30, 0.5, -12),
-        BackgroundTransparency = 1,
-        Text = "▶",
-        TextColor3 = CONFIG.Colors.Accent,
-        TextSize = 10,
-        Font = CONFIG.Font,
-    })
-    
-    -- Click handler
-    self.Instance.MouseButton1Click:Connect(function()
-        if self.Callback then
-            pcall(self.Callback)
-        end
-    end)
+    self.Frame.Parent = self.Parent
+    Utility:CreateCorner(self.Frame, 0.15)
+    Utility:CreateStroke(self.Frame, SkyLineConfig.Colors.Border, 1)
     
     -- Hover effect
-    self.Instance.MouseEnter:Connect(function()
-        local tween = TweenService:Create(self.Instance, TweenInfo.new(0.15), {
-            BackgroundColor3 = CONFIG.Colors.Main,
-        })
-        tween:Play()
+    self.Frame.MouseEnter:Connect(function()
+        Utility:Tween(self.Frame, {
+            BackgroundColor3 = SkyLineConfig.Colors.Background
+        }, 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     end)
     
-    self.Instance.MouseLeave:Connect(function()
-        local tween = TweenService:Create(self.Instance, TweenInfo.new(0.15), {
-            BackgroundColor3 = CONFIG.Colors.Secondary,
-        })
-        tween:Play()
+    self.Frame.MouseLeave:Connect(function()
+        Utility:Tween(self.Frame, {
+            BackgroundColor3 = SkyLineConfig.Colors.Secondary
+        }, 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    end)
+    
+    -- Click
+    self.Frame.MouseButton1Click:Connect(function()
+        Utility:SafeCall(self.Callback)
     end)
     
     return self
 end
 
--- ============================================================
--- LABEL COMPONENT
--- ============================================================
-
+-- Label Component
 local Label = {}
 Label.__index = Label
-setmetatable(Label, { __index = UIComponent })
 
-function Label.new(parent, text, size, textColor)
+function Label.new(parent, properties)
     local self = setmetatable({}, Label)
+    self.Parent = parent
+    self.Properties = properties or {}
+    self.Text = self.Properties.Text or "Label"
+    self.TextSize = self.Properties.TextSize or 14
     
-    self.Text = text or "Label"
-    
-    self.Instance = Utility:Create("TextLabel", {
-        Name = "Label_" .. self.Text,
-        Parent = parent,
-        Size = UDim2.new(1, -20, 0, size or 30),
+    self.Frame = Utility:Create("TextLabel", {
+        Size = UDim2.new(1, 0, 0, self.Properties.Height or 30),
         BackgroundTransparency = 1,
         Text = self.Text,
-        TextColor3 = textColor or CONFIG.Colors.White,
-        TextSize = size and size - 10 or 16,
-        Font = CONFIG.Font,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        Font = SkyLineConfig.Fonts.Main,
+        TextSize = self.TextSize,
+        TextColor3 = self.Properties.Color or SkyLineConfig.Colors.White,
+        TextXAlignment = self.Properties.Alignment or Enum.TextXAlignment.Left,
+        ZIndex = 5
     })
+    self.Frame.Parent = self.Parent
     
     return self
 end
 
--- ============================================================
--- NAVIGATION BAR
--- ============================================================
+-- ============================================
+-- MAIN TAB CONTENT BUILDER
+-- ============================================
+local TabContentBuilder = {}
+TabContentBuilder.__index = TabContentBuilder
 
-local NavigationBar = {}
-NavigationBar.__index = NavigationBar
+function TabContentBuilder.new(main, tabFrame)
+    local self = setmetatable({}, TabContentBuilder)
+    self.Main = main
+    self.TabFrame = tabFrame
+    self.Elements = {}
+    self.CurrentYPos = 10
+    return self
+end
 
-function NavigationBar.new(parent, onTabChange)
-    local self = setmetatable({}, NavigationBar)
-    
-    self.Parent = parent
-    self.OnTabChange = onTabChange
-    self.ActiveTab = "Home"
+function TabContentBuilder:AddToggle(properties)
+    local toggle = Toggle.new(self.TabFrame, properties)
+    toggle.Frame.Position = UDim2.new(0, 10, 0, self.CurrentYPos)
+    self.CurrentYPos = self.CurrentYPos + 55
+    table.insert(self.Elements, toggle)
+    return toggle
+end
+
+function TabContentBuilder:AddSlider(properties)
+    local slider = Slider.new(self.TabFrame, properties)
+    slider.Frame.Position = UDim2.new(0, 10, 0, self.CurrentYPos)
+    self.CurrentYPos = self.CurrentYPos + 65
+    table.insert(self.Elements, slider)
+    return slider
+end
+
+function TabContentBuilder:AddDropdown(properties)
+    local dropdown = Dropdown.new(self.TabFrame, properties)
+    dropdown.Frame.Position = UDim2.new(0, 10, 0, self.CurrentYPos)
+    self.CurrentYPos = self.CurrentYPos + 60
+    table.insert(self.Elements, dropdown)
+    return dropdown
+end
+
+function TabContentBuilder:AddBlock(properties)
+    local block = Block.new(self.TabFrame, properties)
+    block.HeaderFrame.Position = UDim2.new(0, 10, 0, self.CurrentYPos)
+    block.ContentContainer.Position = UDim2.new(0, 10, 0, self.CurrentYPos + 50)
+    self.CurrentYPos = self.CurrentYPos + 55 + (block.Open and block.ContentHeight or 0)
+    table.insert(self.Elements, block)
+    return block
+end
+
+function TabContentBuilder:AddButton(properties)
+    local button = Button.new(self.TabFrame, properties)
+    button.Frame.Position = UDim2.new(0, 10, 0, self.CurrentYPos)
+    self.CurrentYPos = self.CurrentYPos + 50
+    table.insert(self.Elements, button)
+    return button
+end
+
+function TabContentBuilder:AddLabel(properties)
+    local label = Label.new(self.TabFrame, properties)
+    label.Frame.Position = UDim2.new(0, 10, 0, self.CurrentYPos)
+    self.CurrentYPos = self.CurrentYPos + (properties.Height or 30)
+    table.insert(self.Elements, label)
+    return label
+end
+
+-- ============================================
+-- MAIN SKYLINE HUB UI
+-- ============================================
+local SkyLineHub = {}
+SkyLineHub.__index = SkyLineHub
+
+function SkyLineHub.new()
+    local self = setmetatable({}, SkyLineHub)
+    self.Main = nil
     self.Tabs = {}
-    
-    -- Main bar frame
-    self.Instance = Utility:Create("Frame", {
-        Name = "NavigationBar",
-        Parent = parent,
-        Size = UDim2.new(0, 60, 0, 360),
-        Position = UDim2.new(0, 10, 0.5, -180),
-        BackgroundColor3 = CONFIG.Colors.Main,
-        BorderSizePixel = 0,
-    })
-    Utility:MakeCorner(CONFIG.CornerRadius.Large)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
-    
-    -- Highlight bar (animated background for active tab)
-    self.HighlightBar = Utility:Create("Frame", {
-        Name = "Highlight",
-        Parent = self.Instance,
-        Size = UDim2.new(0, 50, 0, 50),
-        Position = UDim2.new(0, 5, 0, 5),
-        BackgroundColor3 = CONFIG.Colors.Secondary,
-        BorderSizePixel = 0,
-        Transparency = 0.8,
-    })
-    Utility:MakeCorner(CONFIG.CornerRadius.Medium)
-    
-    -- Tab definitions
-    local tabDefs = {
-        { Name = "Home", Icon = "rbxassetid://112770735347738", Order = 1 },
-        { Name = "Main", Icon = "rbxassetid://92091304135140", Order = 2 },
-        { Name = "Player", Icon = "rbxassetid://125743894366007", Order = 3 },
-        { Name = "LoadScript", Icon = "rbxassetid://83975792443912", Order = 4 },
-        { Name = "Settings", Icon = "rbxassetid://125743894366007", Order = 5 },
-        { Name = "Exit", Icon = "rbxassetid://96518596121178", Order = 6 },
+    self.NavButtons = {
+        {Id = "home", ImageId = "112770735347738"},
+        {Id = "main", ImageId = "92091304135140"},
+        {Id = "player", ImageId = "6031094667"},
+        {Id = "loadscript", ImageId = "83975792443912"},
+        {Id = "settings", ImageId = "125743894366007"},
+        {Id = "exit", ImageId = "96518596121178"}
     }
-    
-    -- Create tab buttons
-    for _, tabDef in ipairs(tabDefs) do
-        local tabButton = Utility:Create("TextButton", {
-            Name = "Tab_" .. tabDef.Name,
-            Parent = self.Instance,
-            Size = UDim2.new(0, 50, 0, 50),
-            Position = UDim2.new(0, 5, 0, 5 + (tabDef.Order - 1) * 55),
-            BackgroundTransparency = 1,
-            Text = "",
-            AutoButtonColor = false,
-        })
-        
-        local icon = Utility:Create("ImageLabel", {
-            Name = "Icon",
-            Parent = tabButton,
-            Size = UDim2.new(0, 28, 0, 28),
-            Position = UDim2.new(0.5, -14, 0.5, -14),
-            BackgroundTransparency = 1,
-            Image = tabDef.Icon,
-            ImageColor3 = CONFIG.Colors.White,
-        })
-        
-        tabButton.MouseButton1Click:Connect(function()
-            if tabDef.Name == "Exit" then
-                if self.OnTabChange then
-                    pcall(self.OnTabChange, "Exit")
-                end
-            else
-                self:SelectTab(tabDef.Name)
-            end
-        end)
-        
-        -- Hover effect
-        tabButton.MouseEnter:Connect(function()
-            if self.ActiveTab ~= tabDef.Name then
-                local tween = TweenService:Create(self.HighlightBar, TweenInfo.new(0.2), {
-                    Position = UDim2.new(0, 5, 0, 5 + (tabDef.Order - 1) * 55),
-                })
-                tween:Play()
-            end
-        end)
-        
-        tabButton.MouseLeave:Connect(function()
-            -- Return highlight to active tab
-            self:UpdateHighlight()
-        end)
-        
-        table.insert(self.Tabs, {
-            Name = tabDef.Name,
-            Button = tabButton,
-            Icon = icon,
-            Order = tabDef.Order,
-        })
-    end
-    
-    -- Initialize with Home tab
-    self:SelectTab("Home")
-    
-    return self
-end
-
-function NavigationBar:SelectTab(tabName)
-    self.ActiveTab = tabName
-    
-    -- Update highlight position
-    self:UpdateHighlight()
-    
-    -- Update icon colors
-    for _, tab in ipairs(self.Tabs) do
-        local iconColor = tab.Name == tabName and CONFIG.Colors.Accent or CONFIG.Colors.White
-        local tween = TweenService:Create(tab.Icon, TweenInfo.new(0.2), {
-            ImageColor3 = iconColor,
-        })
-        tween:Play()
-    end
-    
-    -- Call callback
-    if self.OnTabChange then
-        pcall(self.OnTabChange, tabName)
-    end
-end
-
-function NavigationBar:UpdateHighlight()
-    for _, tab in ipairs(self.Tabs) do
-        if tab.Name == self.ActiveTab then
-            local tween = TweenService:Create(self.HighlightBar, TweenInfo.new(0.2), {
-                Position = UDim2.new(0, 5, 0, 5 + (tab.Order - 1) * 55),
-            })
-            tween:Play()
-            break
-        end
-    end
-end
-
-function NavigationBar:GetActiveTab()
-    return self.ActiveTab
-end
-
--- ============================================================
--- MAIN UI MANAGER
--- ============================================================
-
-local SkyLineUI = {}
-SkyLineUI.__index = SkyLineUI
-
-function SkyLineUI.new()
-    local self = setmetatable({}, SkyLineUI)
-    
-    self.ScreenGui = nil
-    self.PlayerGui = nil
-    self.MainFrame = nil
-    self.NavigationBar = nil
-    self.Tabs = {}
-    self.ActiveTab = "Home"
-    self.IsVisible = true
-    self.Theme = CONFIG.Theme.Default
-    self.Settings = {}
-    self.Settings.Enabled = true
-    
-    -- Create default settings
+    self.CurrentTab = "home"
     self.Settings = {
-        DisableHeavyEffects = false,
+        DisableEffects = false,
         Theme = "Default",
-        AutoSave = true,
-        CurrentPreset = nil,
+        AutoSave = true
     }
-    
+    self.Open = true
     return self
 end
 
-function SkyLineUI:Create()
-    local success, err = pcall(function()
-        self.PlayerGui = Utility:GetLocalPlayer():WaitForChild("PlayerGui")
-        
-        self.ScreenGui = Utility:Create("ScreenGui", {
-            Name = "SkyLineHub",
-            Parent = self.PlayerGui,
-            IgnoreGuiInset = true,
-            ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        })
-        
-        -- Create glow background
-        local glowBackground = Utility:Create("Frame", {
-            Name = "GlowBackground",
-            Parent = self.ScreenGui,
-            Size = UDim2.new(1, 0, 1, 0),
-            BackgroundTransparency = 1,
-            ZIndex = -10,
-        })
-        
-        -- Create glow blobs
-        self.GlowBlobs = {}
-        for i = 1, 8 do
-            local blob = Utility:Create("Frame", {
-                Name = "GlowBlob" .. i,
-                Parent = glowBackground,
-                Size = UDim2.new(0, 200, 0, 200),
-                Position = UDim2.new(0, math.random(-100, 900), 0, math.random(-100, 500)),
-                BackgroundColor3 = i % 2 == 0 and self.Theme.Glow1 or self.Theme.Glow2,
-                BorderSizePixel = 0,
-                Transparency = 0.9,
-            })
-            Utility:MakeCorner(CONFIG.CornerRadius.Round)
-            
-            -- Animate glow
-            local tween = TweenService:Create(blob, TweenInfo.new(5 + i * 2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-                Position = UDim2.new(0, math.random(-100, 900), 0, math.random(-100, 500)),
-                Size = UDim2.new(0, 150 + i * 20, 0, 150 + i * 20),
-                Transparency = 0.7 + math.random() * 0.2,
-            })
-            tween:Play()
-            tween:Repeat()
-            
-            table.insert(self.GlowBlobs, blob)
+function SkyLineHub:Create()
+    -- Create main container
+    self.Main = Utility:Create("ScreenGui", {
+        Name = "SkyLineHub",
+        IgnoreGuiInset = true,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        DisplayOrder = 999
+    })
+    self.Main.Parent = game:GetService("CoreGui")
+    
+    -- Create UI elements
+    self:CreateAmbientGlow()
+    self:CreateTabs()
+    self:CreateNavigationBar()
+    self:CreateLoadingScreen()
+    
+    -- Start loading sequence
+    self:StartLoadingSequence()
+end
+
+function SkyLineHub:CreateAmbientGlow()
+    self.AmbientGlow = AmbientGlow.new(self.Main)
+    self.AmbientGlow:Create()
+end
+
+function SkyLineHub:CreateTabs()
+    -- Create tab content frames
+    local tabContainer = Utility:Create("Frame", {
+        Size = UDim2.new(0, 700, 0, 500),
+        Position = UDim2.new(0, 100, 0.5, -250),
+        BackgroundTransparency = 1,
+        ZIndex = 5,
+        Visible = true
+    })
+    tabContainer.Parent = self.Main
+    
+    -- Home tab
+    local homeTab = Utility:Create("Frame", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
+        BorderSizePixel = 0,
+        ZIndex = 6,
+        Visible = false
+    })
+    homeTab.Parent = tabContainer
+    Utility:CreateCorner(homeTab, 0.15)
+    Utility:CreateStroke(homeTab, SkyLineConfig.Colors.Border, 2)
+    
+    -- Main tab
+    local mainTab = Utility:Create("Frame", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
+        BorderSizePixel = 0,
+        ZIndex = 6,
+        Visible = false
+    })
+    mainTab.Parent = tabContainer
+    Utility:CreateCorner(mainTab, 0.15)
+    Utility:CreateStroke(mainTab, SkyLineConfig.Colors.Border, 2)
+    
+    -- Player tab
+    local playerTab = Utility:Create("Frame", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
+        BorderSizePixel = 0,
+        ZIndex = 6,
+        Visible = false
+    })
+    playerTab.Parent = tabContainer
+    Utility:CreateCorner(playerTab, 0.15)
+    Utility:CreateStroke(playerTab, SkyLineConfig.Colors.Border, 2)
+    
+    -- LoadScript tab
+    local loadScriptTab = Utility:Create("Frame", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
+        BorderSizePixel = 0,
+        ZIndex = 6,
+        Visible = false
+    })
+    loadScriptTab.Parent = tabContainer
+    Utility:CreateCorner(loadScriptTab, 0.15)
+    Utility:CreateStroke(loadScriptTab, SkyLineConfig.Colors.Border, 2)
+    
+    -- Settings tab
+    local settingsTab = Utility:Create("Frame", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
+        BorderSizePixel = 0,
+        ZIndex = 6,
+        Visible = false
+    })
+    settingsTab.Parent = tabContainer
+    Utility:CreateCorner(settingsTab, 0.15)
+    Utility:CreateStroke(settingsTab, SkyLineConfig.Colors.Border, 2)
+    
+    -- Store tabs
+    self.Tabs["home"] = homeTab
+    self.Tabs["main"] = mainTab
+    self.Tabs["player"] = playerTab
+    self.Tabs["loadscript"] = loadScriptTab
+    self.Tabs["settings"] = settingsTab
+end
+
+function SkyLineHub:CreateNavigationBar()
+    self.NavigationBar = NavigationBar.new(self.Main)
+    self.NavigationBar:Create(self.NavButtons)
+    
+    -- Connect navigation callbacks
+    for i, btnData in ipairs(self.NavButtons) do
+        local oldCallback = btnData.Callback
+        btnData.Callback = function()
+            self:SwitchTab(btnData.Id, i)
+            if oldCallback then oldCallback() end
         end
+    end
+end
+
+function SkyLineHub:CreateLoadingScreen()
+    self.LoadingScreen = LoadingScreen.new(self.Main)
+    self.LoadingScreen:Create()
+end
+
+function SkyLineHub:StartLoadingSequence()
+    -- Simulate loading process
+    task.delay(2, function()
+        -- Fade out loading screen
+        Utility:Tween(self.LoadingScreen.LoadingFrame, {
+            Transparency = 1,
+            Scale = Vector2.new(0.85, 0.85)
+        }, 0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
         
-        -- Create main frame
-        self.MainFrame = Utility:Create("Frame", {
-            Name = "Main",
-            Parent = self.ScreenGui,
-            Size = UDim2.new(0, 800, 0, 500),
-            Position = UDim2.new(0.5, -400, 0.5, -250),
-            BackgroundColor3 = CONFIG.Colors.Main,
-            BorderSizePixel = 0,
-            Visible = false,
-        })
-        Utility:MakeCorner(CONFIG.CornerRadius.Large)
-        Utility:MakeStroke(CONFIG.Colors.Border, 2)
-        
-        -- Create navigation bar
-        self.NavigationBar = NavigationBar.new(self.MainFrame, function(tabName)
-            self:SwitchTab(tabName)
-        end)
-        
-        -- Create tab content containers
-        for _, tabName in ipairs({"Home", "Main", "Player", "LoadScript", "Settings"}) do
-            local tabFrame = Utility:Create("Frame", {
-                Name = "Tab_" .. tabName,
-                Parent = self.MainFrame,
-                Size = UDim2.new(1, -100, 1, -20),
-                Position = UDim2.new(0, 90, 0, 10),
-                BackgroundColor3 = CONFIG.Colors.Secondary,
-                BorderSizePixel = 0,
-                Visible = false,
-            })
-            Utility:MakeCorner(CONFIG.CornerRadius.Large)
-            Utility:MakeStroke(CONFIG.Colors.Border, 1)
+        task.delay(0.5, function()
+            if self.LoadingScreen.LoadingFrame then
+                self.LoadingScreen.LoadingFrame:Destroy()
+            end
             
-            self.Tabs[tabName] = tabFrame
-        end
-        
-        -- Create Exit button and collapse functionality
-        self:CreateExitButton()
-        
-        -- Show loading screen
-        LoadingScreen:Show(self.ScreenGui, function()
-            self:ShowUI()
+            -- Show navigation bar
+            self.NavigationBar:Show()
+            
+            -- Show initial tab
+            self:SwitchTab("home", 1)
         end)
     end)
-    
-    if not success then
-        warn("SkyLine UI Error: " .. tostring(err))
-    end
-    
-    return self
 end
 
-function SkyLineUI:ShowUI()
-    self.MainFrame.Visible = true
+function SkyLineHub:SwitchTab(tabId, index)
+    if not self.Tabs[tabId] then return end
     
-    -- Animate main frame entrance
-    local tween = TweenService:Create(self.MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Scale = 1,
-        Transparency = 0,
-    })
-    tween:Play()
-    
-    -- Show Home tab by default
-    self:SwitchTab("Home")
-end
-
-function SkyLineUI:SwitchTab(tabName)
-    if tabName == "Exit" then
-        self:HideUI()
-        return
-    end
-    
-    if self.ActiveTab == tabName then
-        return
+    -- Determine direction
+    local direction = "down"
+    if index and self.LastIndex and index < self.LastIndex then
+        direction = "up"
     end
     
     -- Hide current tab
-    local oldTab = self.Tabs[self.ActiveTab]
-    if oldTab then
-        local tween = TweenService:Create(oldTab, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-            Scale = 0.8,
-            Transparency = 1,
-        })
-        tween:Play()
-        tween.Completed:Connect(function()
-            oldTab.Visible = false
+    if self.CurrentTab and self.Tabs[self.CurrentTab] then
+        local currentFrame = self.Tabs[self.CurrentTab]
+        
+        if direction == "down" then
+            Utility:Tween(currentFrame, {
+                Position = UDim2.new(0, 0, 0, 20),
+                Transparency = 1,
+                Scale = Vector2.new(0.95, 0.95)
+            }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        else
+            Utility:Tween(currentFrame, {
+                Position = UDim2.new(0, 0, 0, -20),
+                Transparency = 1,
+                Scale = Vector2.new(0.95, 0.95)
+            }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        end
+        
+        task.delay(0.3, function()
+            currentFrame.Visible = false
+            currentFrame.Position = UDim2.new(0, 0, 0, 0)
         end)
     end
     
     -- Show new tab
-    local newTab = self.Tabs[tabName]
-    if newTab then
-        newTab.Visible = true
-        newTab.Scale = 0.8
-        newTab.Transparency = 1
+    local newFrame = self.Tabs[tabId]
+    newFrame.Visible = true
+    
+    if direction == "down" then
+        newFrame.Position = UDim2.new(0, 0, 0, -20)
+        newFrame.Transparency = 1
+        newFrame.Scale = Vector2.new(0.95, 0.95)
         
-        local tween = TweenService:Create(newTab, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Scale = 1,
+        Utility:Tween(newFrame, {
+            Position = UDim2.new(0, 0, 0, 0),
             Transparency = 0,
-        })
-        tween:Play()
+            Scale = Vector2.new(1, 1)
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    else
+        newFrame.Position = UDim2.new(0, 0, 0, 20)
+        newFrame.Transparency = 1
+        newFrame.Scale = Vector2.new(0.95, 0.95)
+        
+        Utility:Tween(newFrame, {
+            Position = UDim2.new(0, 0, 0, 0),
+            Transparency = 0,
+            Scale = Vector2.new(1, 1)
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     end
     
-    self.ActiveTab = tabName
+    self.CurrentTab = tabId
+    self.LastIndex = index
 end
 
-function SkyLineUI:HideUI()
-    self.IsVisible = false
+function SkyLineHub:Hide()
+    self.Open = false
+    self.NavigationBar:Hide()
     
-    -- Animate main frame out
-    local tween = TweenService:Create(self.MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-        Position = UDim2.new(-0.5, -400, 0.5, -250),
-        Transparency = 1,
-    })
-    tween:Play()
-    tween.Completed:Connect(function()
-        self.MainFrame.Visible = false
-    end)
+    -- Hide current tab
+    if self.Tabs[self.CurrentTab] then
+        Utility:Tween(self.Tabs[self.CurrentTab], {
+            Transparency = 1,
+            Scale = Vector2.new(0.95, 0.95)
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        
+        task.delay(0.3, function()
+            self.Tabs[self.CurrentTab].Visible = false
+        end)
+    end
     
-    -- Show expand button
-    self.ExpandButton.Visible = true
+    -- Show small arrow to reopen
+    if not self.ArrowButton then
+        self.ArrowButton = Utility:Create("TextButton", {
+            Size = UDim2.new(0, 30, 0, 60),
+            Position = UDim2.new(0, 10, 0.5, -30),
+            BackgroundColor3 = SkyLineConfig.Colors.Background,
+            Text = "»",
+            Font = SkyLineConfig.Fonts.Bold,
+            TextSize = 20,
+            TextColor3 = SkyLineConfig.Colors.Accent,
+            BorderSizePixel = 0,
+            ZIndex = 50
+        })
+        self.ArrowButton.Parent = self.Main
+        Utility:CreateCorner(self.ArrowButton, 0.15)
+        Utility:CreateStroke(self.ArrowButton, SkyLineConfig.Colors.Border, 1)
+        
+        self.ArrowButton.MouseButton1Click:Connect(function()
+            self:Show()
+        end)
+    end
+    
+    self.ArrowButton.Visible = true
 end
 
-function SkyLineUI:ShowUIFromHidden()
-    self.IsVisible = true
+function SkyLineHub:Show()
+    self.Open = true
     
-    self.MainFrame.Visible = true
-    self.MainFrame.Position = UDim2.new(-0.5, -400, 0.5, -250)
-    self.MainFrame.Transparency = 1
+    -- Hide arrow
+    if self.ArrowButton then
+        self.ArrowButton.Visible = false
+    end
     
-    local tween = TweenService:Create(self.MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Position = UDim2.new(0.5, -400, 0.5, -250),
-        Transparency = 0,
-    })
-    tween:Play()
+    -- Show navigation bar
+    self.NavigationBar:Show()
     
-    -- Hide expand button
-    self.ExpandButton.Visible = false
+    -- Show current tab
+    if self.Tabs[self.CurrentTab] then
+        self.Tabs[self.CurrentTab].Visible = true
+        Utility:Tween(self.Tabs[self.CurrentTab], {
+            Transparency = 0,
+            Scale = Vector2.new(1, 1)
+        }, 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    end
 end
 
-function SkyLineUI:CreateExitButton()
-    -- Collapse arrow button (appears when UI is hidden)
-    self.ExpandButton = Utility:Create("TextButton", {
-        Name = "ExpandButton",
-        Parent = self.ScreenGui,
-        Size = UDim2.new(0, 30, 0, 60),
-        Position = UDim2.new(0, 5, 0.5, -30),
-        BackgroundColor3 = CONFIG.Colors.Main,
-        BorderSizePixel = 0,
-        Text = "»",
-        TextColor3 = CONFIG.Colors.White,
-        TextSize = 18,
-        Font = CONFIG.FontBold,
-        Visible = false,
-    })
-    Utility:MakeCorner(CONFIG.CornerRadius.Medium)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
+-- ============================================
+-- HOME TAB CONTENT
+-- ============================================
+function SkyLineHub:CreateHomeTab()
+    local homeTab = self.Tabs["home"]
+    if not homeTab then return end
     
-    self.ExpandButton.MouseButton1Click:Connect(function()
-        self:ShowUIFromHidden()
-    end)
-end
-
--- ============================================================
--- TAB CONTENT BUILDERS
--- ============================================================
-
-function SkyLineUI:BuildHomeTab()
-    local homeTab = self.Tabs["Home"]
-    
-    -- Create profile section
+    -- Profile section
     local profileFrame = Utility:Create("Frame", {
-        Name = "Profile",
-        Parent = homeTab,
-        Size = UDim2.new(1, -20, 0, 80),
-        Position = UDim2.new(0, 10, 0, 10),
-        BackgroundColor3 = CONFIG.Colors.Main,
+        Size = UDim2.new(1, 0, 0, 120),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundColor3 = SkyLineConfig.Colors.Secondary,
         BorderSizePixel = 0,
+        ZIndex = 7
     })
-    Utility:MakeCorner(CONFIG.CornerRadius.Medium)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
+    profileFrame.Parent = homeTab
+    Utility:CreateCorner(profileFrame, 0.15)
     
-    -- Profile avatar
-    local avatar = Utility:Create("ImageLabel", {
-        Name = "Avatar",
-        Parent = profileFrame,
-        Size = UDim2.new(0, 60, 0, 60),
-        Position = UDim2.new(0, 10, 0.5, -30),
-        BackgroundColor3 = CONFIG.Colors.Border,
+    -- Avatar circle
+    local avatarFrame = Utility:Create("Frame", {
+        Size = UDim2.new(0, 80, 0, 80),
+        Position = UDim2.new(0, 20, 0.5, -40),
+        BackgroundColor3 = SkyLineConfig.Colors.Border,
         BorderSizePixel = 0,
-        Image = "rbxassetid://12020657755",
+        ZIndex = 8
     })
-    Utility:MakeCorner(CONFIG.CornerRadius.Round)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
+    avatarFrame.Parent = profileFrame
+    Utility:CreateCorner(avatarFrame, 1)
+    
+    local avatarImage = Utility:Create("ImageLabel", {
+        Size = UDim2.new(1, -10, 1, -10),
+        Position = UDim2.new(0, 5, 0, 5),
+        BackgroundTransparency = 1,
+        Image = "rbxassetid://6031094667",
+        ImageColor3 = SkyLineConfig.Colors.Accent,
+        ZIndex = 9
+    })
+    avatarImage.Parent = avatarFrame
+    Utility:CreateCorner(avatarImage, 1)
     
     -- Player info
     local infoFrame = Utility:Create("Frame", {
-        Name = "Info",
-        Parent = profileFrame,
-        Size = UDim2.new(1, -90, 1, -10),
-        Position = UDim2.new(0, 80, 0, 5),
+        Size = UDim2.new(1, -120, 1, 0),
+        Position = UDim2.new(0, 110, 0, 0),
         BackgroundTransparency = 1,
+        ZIndex = 8
     })
+    infoFrame.Parent = profileFrame
     
-    local playerLabel = Utility:Create("TextLabel", {
-        Name = "PlayerName",
-        Parent = infoFrame,
-        Size = UDim2.new(1, 0, 0, 25),
-        BackgroundTransparency = 1,
-        Text = "Username: " .. (Utility:GetLocalPlayer().Name or "Unknown"),
-        TextColor3 = CONFIG.Colors.White,
-        TextSize = 16,
-        Font = CONFIG.FontBold,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    })
-    
-    local idLabel = Utility:Create("TextButton", {
-        Name = "PlayerID",
-        Parent = infoFrame,
-        Size = UDim2.new(0, 200, 0, 20),
-        Position = UDim2.new(0, 0, 0, 28),
-        BackgroundTransparency = 1,
-        Text = "ID: " .. tostring(Utility:GetLocalPlayer().UserId),
-        TextColor3 = CONFIG.Colors.Accent,
+    -- Player ID
+    local playerIdButton = Utility:Create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 35),
+        Position = UDim2.new(0, 0, 0, 10),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
+        Text = "Player ID: 123456789",
+        Font = SkyLineConfig.Fonts.Main,
         TextSize = 13,
-        Font = CONFIG.Font,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextColor3 = SkyLineConfig.Colors.White,
+        BorderSizePixel = 0,
+        ZIndex = 9
     })
+    playerIdButton.Parent = infoFrame
+    Utility:CreateCorner(playerIdButton, 0.1)
     
-    idLabel.MouseButton1Click:Connect(function()
-        Utility:CopyToClipboard(tostring(Utility:GetLocalPlayer().UserId))
-        -- Show notification
-        self:ShowNotification("Successfully copied!")
+    playerIdButton.MouseButton1Click:Connect(function()
+        local playerId = game.Players.LocalPlayer.UserId
+        if Utility:CopyToClipboard(playerId) then
+            NotificationManager:Show("Success", "Player ID copied to clipboard!", 2)
+        end
     end)
     
-    -- Stats
-    local statsFrame = Utility:Create("Frame", {
-        Name = "Stats",
-        Parent = profileFrame,
-        Size = UDim2.new(0, 150, 1, 0),
-        Position = UDim2.new(1, -160, 0, 0),
-        BackgroundTransparency = 1,
-    })
-    
+    -- Ping display
     local pingLabel = Utility:Create("TextLabel", {
-        Name = "Ping",
-        Parent = statsFrame,
-        Size = UDim2.new(1, 0, 0, 25),
-        Position = UDim2.new(0, 0, 0, 25),
-        BackgroundTransparency = 1,
-        Text = "Ping: 0 ms",
-        TextColor3 = CONFIG.Colors.White,
-        TextSize = 14,
-        Font = CONFIG.Font,
-    })
-    
-    local fpsLabel = Utility:Create("TextLabel", {
-        Name = "FPS",
-        Parent = statsFrame,
-        Size = UDim2.new(1, 0, 0, 25),
+        Size = UDim2.new(0.5, 0, 0, 30),
         Position = UDim2.new(0, 0, 0, 50),
         BackgroundTransparency = 1,
-        Text = "FPS: 60",
-        TextColor3 = CONFIG.Colors.White,
-        TextSize = 14,
-        Font = CONFIG.Font,
+        Text = "Ping: 0ms",
+        Font = SkyLineConfig.Fonts.Main,
+        TextSize = 13,
+        TextColor3 = SkyLineConfig.Colors.White,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 9
     })
+    pingLabel.Parent = infoFrame
     
-    -- Real-time updates
+    -- FPS display
+    local fpsLabel = Utility:Create("TextLabel", {
+        Size = UDim2.new(0.5, 0, 0, 30),
+        Position = UDim2.new(0.5, 0, 0, 50),
+        BackgroundTransparency = 1,
+        Text = "FPS: 60",
+        Font = SkyLineConfig.Fonts.Main,
+        TextSize = 13,
+        TextColor3 = SkyLineConfig.Colors.White,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        ZIndex = 9
+    })
+    fpsLabel.Parent = infoFrame
+    
+    -- Update loop
     task.spawn(function()
-        local pingText = pingLabel
-        local fpsText = fpsLabel
-        local lastFPS = 0
-        local frames = 0
-        local time = os.clock()
-        
-        while true do
+        while self.Main.Parent do
             task.wait(1)
-            frames = frames + 1
             
-            local currentTime = os.clock()
-            if currentTime - time >= 1 then
-                lastFPS = frames
-                frames = 0
-                time = currentTime
-                
-                pcall(function()
-                    fpsText.Text = "FPS: " .. tostring(lastFPS)
-                end)
-            end
+            local ping = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()
+            pingLabel.Text = "Ping: " .. math.floor(ping) .. "ms"
             
-            pcall(function()
-                local ping = game:GetService("Stats"):FindFirstChild("Network") and 
-                           game:GetService("Stats").Network:FindFirstChild("Ping") or nil
-                if ping then
-                    pingText.Text = "Ping: " .. tostring(math.floor(ping.Value * 1000)) .. " ms"
-                end
-            end)
+            local fps = 1 / game:GetService("RunService").RenderStepped:Wait()
+            fpsLabel.Text = "FPS: " .. math.floor(fps)
         end
     end)
-    
-    -- Recent activity section
-    local activityFrame = Utility:Create("Frame", {
-        Name = "RecentActivity",
-        Parent = homeTab,
-        Size = UDim2.new(1, -20, 0, 200),
-        Position = UDim2.new(0, 10, 0, 100),
-        BackgroundColor3 = CONFIG.Colors.Main,
-        BorderSizePixel = 0,
-    })
-    Utility:MakeCorner(CONFIG.CornerRadius.Medium)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
-    
-    local activityTitle = Utility:Create("TextLabel", {
-        Name = "Title",
-        Parent = activityFrame,
-        Size = UDim2.new(1, -20, 0, 30),
-        Position = UDim2.new(0, 10, 0, 5),
-        BackgroundTransparency = 1,
-        Text = "Recent Activity",
-        TextColor3 = CONFIG.Colors.White,
-        TextSize = 16,
-        Font = CONFIG.FontBold,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    })
-    
-    local activityList = Utility:Create("ScrollingFrame", {
-        Name = "ActivityList",
-        Parent = activityFrame,
-        Size = UDim2.new(1, -20, 1, -40),
-        Position = UDim2.new(0, 10, 0, 40),
-        BackgroundTransparency = 1,
-        ScrollBarThickness = 2,
-        ScrollBarImageColor3 = CONFIG.Colors.Accent,
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-    })
-    
-    -- Add some activity items
-    local activities = {
-        "Loaded SkyLine Hub",
-        "Welcome to the hub!",
-        "Scripts are ready to use",
-    }
-    
-    for i, activity in ipairs(activities) do
-        local item = Utility:Create("TextLabel", {
-            Name = "Item" .. i,
-            Parent = activityList,
-            Size = UDim2.new(1, 0, 0, 25),
-            Position = UDim2.new(0, 0, 0, (i - 1) * 28),
-            BackgroundTransparency = 1,
-            Text = "• " .. activity,
-            TextColor3 = CONFIG.Colors.TextDim,
-            TextSize = 13,
-            Font = CONFIG.Font,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
-    end
 end
 
-function SkyLineUI:BuildMainTab()
-    local mainTab = self.Tabs["Main"]
+-- ============================================
+-- MAIN TAB CONTENT
+-- ============================================
+function SkyLineHub:CreateMainTab()
+    local mainTab = self.Tabs["main"]
+    if not mainTab then return end
     
-    -- Create a scrolling frame for content
-    local scrollFrame = Utility:Create("ScrollingFrame", {
-        Name = "Content",
-        Parent = mainTab,
-        Size = UDim2.new(1, -20, 1, -20),
-        Position = UDim2.new(0, 10, 0, 10),
-        BackgroundTransparency = 1,
-        ScrollBarThickness = 4,
-        ScrollBarImageColor3 = CONFIG.Colors.Accent,
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
+    local builder = TabContentBuilder.new(self.Main, mainTab)
+    
+    -- Example content
+    builder:AddToggle({
+        Title = "Example Toggle",
+        Default = false,
+        Callback = function(value)
+            print("Toggle changed:", value)
+        end
     })
     
-    -- Toggle example
-    local toggle1 = Toggle.new(scrollFrame, "Example Toggle", false, function(value)
-        print("Toggle changed to:", value)
-    end)
-    toggle1.Instance.Position = UDim2.new(0, 10, 0, 10)
+    builder:AddSlider({
+        Title = "Example Slider",
+        Min = 0,
+        Max = 100,
+        Default = 50,
+        Callback = function(value)
+            print("Slider changed:", value)
+        end
+    })
     
-    -- Slider example
-    local slider1 = Slider.new(scrollFrame, "Example Slider", 0, 100, 50, function(value)
-        print("Slider value:", value)
-    end)
-    slider1.Instance.Position = UDim2.new(0, 10, 0, 60)
-    
-    -- Dropdown example
-    local dropdown1 = Dropdown.new(scrollFrame, "Example Dropdown", {"Option 1", "Option 2", "Option 3", "Option 4"}, 1, function(item, index)
-        print("Dropdown selected:", item, index)
-    end)
-    dropdown1.Instance.Position = UDim2.new(0, 10, 0, 110)
+    builder:AddDropdown({
+        Title = "Example Dropdown",
+        Options = {"Option 1", "Option 2", "Option 3"},
+        Default = "Option 1",
+        Callback = function(option)
+            print("Dropdown selected:", option)
+        end
+    })
     
     -- Block example
-    local block1 = Block.new(scrollFrame, "Example Block", false)
-    block1.Instance.Position = UDim2.new(0, 10, 0, 160)
-    
-    local blockToggle = Toggle.new(block1.Content, "Inside Block Toggle", false, function(value)
-        print("Block toggle:", value)
-    end)
-    
-    local blockSlider = Slider.new(block1.Content, "Inside Block Slider", 0, 10, 5, function(value)
-        print("Block slider:", value)
-    end)
-    
-    block1:AddElement(blockToggle)
-    block1:AddElement(blockSlider)
-end
-
-function SkyLineUI:BuildPlayerTab()
-    local playerTab = self.Tabs["Player"]
-    
-    local scrollFrame = Utility:Create("ScrollingFrame", {
-        Name = "Content",
-        Parent = playerTab,
-        Size = UDim2.new(1, -20, 1, -20),
-        Position = UDim2.new(0, 10, 0, 10),
-        BackgroundTransparency = 1,
-        ScrollBarThickness = 4,
-        ScrollBarImageColor3 = CONFIG.Colors.Accent,
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
+    local block = builder:AddBlock({
+        Title = "Example Block",
+        ContentHeight = 200
     })
     
-    local yPos = 10
+    -- Add content to block
+    local blockToggle = Toggle.new(block.ContentContainer, {
+        Title = "Inner Toggle",
+        Default = false
+    })
+    blockToggle.Frame.Position = UDim2.new(0, 5, 0, 5)
+    blockToggle.Frame.Size = UDim2.new(1, -10, 0, 50)
     
-    -- Speed Slider + Toggle
-    local speedToggle = Toggle.new(scrollFrame, "Enable Speed", false, function(value)
-        if value then
-            -- Enable speed boost
-            print("Speed boost enabled")
-        else
-            -- Disable speed boost
-            print("Speed boost disabled")
-        end
-    end)
-    speedToggle.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    local speedSlider = Slider.new(scrollFrame, "Speed Value", 16, 100, 16, function(value)
-        -- Set walk speed
-        pcall(function()
-            local player = Utility:GetLocalPlayer()
-            if player.Character and player.Character:FindFirstChild("Humanoid") then
-                player.Character.Humanoid.WalkSpeed = value
-            end
-        end)
-    end)
-    speedSlider.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    -- Jump Power Slider + Toggle
-    local jumpToggle = Toggle.new(scrollFrame, "Custom Jump", false, function(value)
-        print("Custom jump:", value)
-    end)
-    jumpToggle.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    local jumpSlider = Slider.new(scrollFrame, "Jump Power", 50, 250, 50, function(value)
-        pcall(function()
-            local player = Utility:GetLocalPlayer()
-            if player.Character and player.Character:FindFirstChild("Humanoid") then
-                player.Character.Humanoid.JumpPower = value
-            end
-        end)
-    end)
-    jumpSlider.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    -- ESP Toggle
-    local espToggle = Toggle.new(scrollFrame, "Highlight ESP", false, function(value)
-        if value then
-            -- Enable ESP
-            print("ESP enabled")
-        else
-            -- Disable ESP
-            print("ESP disabled")
-        end
-    end)
-    espToggle.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    -- FPS Boost Toggle
-    local fpsToggle = Toggle.new(scrollFrame, "FPS Boost", false, function(value)
-        if value then
-            -- Enable FPS boost
-            print("FPS Boost enabled")
-        else
-            -- Disable FPS boost
-            print("FPS Boost disabled")
-        end
-    end)
-    fpsToggle.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    -- Noclip Toggle
-    local noclipToggle = Toggle.new(scrollFrame, "Noclip", false, function(value)
-        print("Noclip:", value)
-    end)
-    noclipToggle.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    -- Infinite Jump Toggle
-    local infiniteJumpToggle = Toggle.new(scrollFrame, "Infinite Jump", false, function(value)
-        print("Infinite Jump:", value)
-    end)
-    infiniteJumpToggle.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    -- Anti AFK Toggle
-    local antiAfkToggle = Toggle.new(scrollFrame, "Anti AFK", false, function(value)
-        print("Anti AFK:", value)
-    end)
-    antiAfkToggle.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    -- Spin Toggle + Slider
-    local spinToggle = Toggle.new(scrollFrame, "Spin", false, function(value)
-        print("Spin:", value)
-    end)
-    spinToggle.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    local spinSlider = Slider.new(scrollFrame, "Spin Speed", 1, 10, 5, function(value)
-        print("Spin speed:", value)
-    end)
-    spinSlider.Instance.Position = UDim2.new(0, 10, 0, yPos)
+    local blockSlider = Slider.new(block.ContentContainer, {
+        Title = "Inner Slider",
+        Min = 0,
+        Max = 10,
+        Default = 5
+    })
+    blockSlider.Frame.Position = UDim2.new(0, 5, 0, 60)
+    blockSlider.Frame.Size = UDim2.new(1, -10, 0, 60)
 end
 
-function SkyLineUI:BuildLoadScriptTab()
-    local loadTab = self.Tabs["LoadScript"]
+-- ============================================
+-- PLAYER TAB CONTENT
+-- ============================================
+function SkyLineHub:CreatePlayerTab()
+    local playerTab = self.Tabs["player"]
+    if not playerTab then return end
     
-    local scrollFrame = Utility:Create("ScrollingFrame", {
-        Name = "Content",
-        Parent = loadTab,
-        Size = UDim2.new(1, -20, 1, -20),
-        Position = UDim2.new(0, 10, 0, 10),
-        BackgroundTransparency = 1,
-        ScrollBarThickness = 4,
-        ScrollBarImageColor3 = CONFIG.Colors.Accent,
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
+    local builder = TabContentBuilder.new(self.Main, playerTab)
+    
+    -- Speed slider + toggle
+    local speedToggle = builder:AddToggle({
+        Title = "Enable Speed",
+        Default = false,
+        Callback = function(value)
+            if value then
+                local player = game.Players.LocalPlayer
+                player.Character.Humanoid.WalkSpeed = 16
+            else
+                local player = game.Players.LocalPlayer
+                player.Character.Humanoid.WalkSpeed = 16
+            end
+        end
     })
     
+    local speedSlider = builder:AddSlider({
+        Title = "Speed",
+        Min = 16,
+        Max = 100,
+        Default = 16,
+        Callback = function(value)
+            if speedToggle:GetValue() then
+                local player = game.Players.LocalPlayer
+                if player.Character and player.Character:FindFirstChild("Humanoid") then
+                    player.Character.Humanoid.WalkSpeed = value
+                end
+            end
+        end
+    })
+    
+    -- Jump Power
+    local jumpToggle = builder:AddToggle({
+        Title = "Custom Jump",
+        Default = false
+    })
+    
+    local jumpSlider = builder:AddSlider({
+        Title = "Jump Power",
+        Min = 50,
+        Max = 200,
+        Default = 50,
+        Callback = function(value)
+            if jumpToggle:GetValue() then
+                local player = game.Players.LocalPlayer
+                if player.Character and player.Character:FindFirstChild("Humanoid") then
+                    player.Character.Humanoid.JumpPower = value
+                end
+            end
+        end
+    })
+    
+    -- Other toggles
+    builder:AddToggle({
+        Title = "Highlight ESP",
+        Default = false,
+        Callback = function(value)
+            -- ESP implementation
+        end
+    })
+    
+    builder:AddToggle({
+        Title = "FPS Boost",
+        Default = false
+    })
+    
+    builder:AddToggle({
+        Title = "Noclip",
+        Default = false
+    })
+    
+    builder:AddToggle({
+        Title = "Infinite Jump",
+        Default = false
+    })
+    
+    builder:AddToggle({
+        Title = "Anti AFK",
+        Default = false
+    })
+    
+    -- Spin
+    local spinToggle = builder:AddToggle({
+        Title = "Spin",
+        Default = false
+    })
+    
+    builder:AddSlider({
+        Title = "Spin Speed",
+        Min = 1,
+        Max = 30,
+        Default = 10,
+        Callback = function(value)
+            -- Spin implementation
+        end
+    })
+end
+
+-- ============================================
+-- LOADSCRIPT TAB CONTENT
+-- ============================================
+function SkyLineHub:CreateLoadScriptTab()
+    local loadScriptTab = self.Tabs["loadscript"]
+    if not loadScriptTab then return end
+    
+    local builder = TabContentBuilder.new(self.Main, loadScriptTab)
+    
+    -- Script buttons
     local scripts = {
-        { Name = "Universal Script", Callback = function() print("Running Universal Script") end },
-        { Name = "ESP Script", Callback = function() print("Running ESP Script") end },
-        { Name = "Aimbot Script", Callback = function() print("Running Aimbot Script") end },
-        { Name = "Teleport Script", Callback = function() print("Running Teleport Script") end },
-        { Name = "Fly Script", Callback = function() print("Running Fly Script") end },
+        {Title = "Infinite Yield", Script = "loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()"},
+        {Title = "ESP Script", Script = "print('ESP script loaded')"},
+        {Title = "Admin Script", Script = "print('Admin script loaded')"},
+        {Title: "Universal Script", Script = "print('Universal script loaded')"}
     }
     
-    local yPos = 10
-    
-    for _, script in ipairs(scripts) do
-        local button = Button.new(scrollFrame, script.Name, script.Callback)
-        button.Instance.Position = UDim2.new(0, 10, 0, yPos)
-        yPos = yPos + 44
+    for _, scriptData in ipairs(scripts) do
+        builder:AddButton({
+            Title = "▶ " .. scriptData.Title,
+            Callback = function()
+                Utility:SafeCall(function()
+                    loadstring(scriptData.Script)()
+                    NotificationManager:Show("Success", scriptData.Title .. " loaded!", 2)
+                end)
+            end
+        })
     end
 end
 
-function SkyLineUI:BuildSettingsTab()
-    local settingsTab = self.Tabs["Settings"]
+-- ============================================
+-- SETTINGS TAB CONTENT
+-- ============================================
+function SkyLineHub:CreateSettingsTab()
+    local settingsTab = self.Tabs["settings"]
+    if not settingsTab then return end
     
-    local scrollFrame = Utility:Create("ScrollingFrame", {
-        Name = "Content",
-        Parent = settingsTab,
-        Size = UDim2.new(1, -20, 1, -20),
+    local builder = TabContentBuilder.new(self.Main, settingsTab)
+    
+    -- Heavy effects toggle
+    builder:AddToggle({
+        Title = "Disable Heavy Effects",
+        Default = false,
+        Callback = function(value)
+            self.Settings.DisableEffects = value
+            self.AmbientGlow:SetEnabled(not value)
+        end
+    })
+    
+    -- Theme selector
+    builder:AddDropdown({
+        Title = "Theme",
+        Options = {"Default", "Ocean", "Sunset", "Forest"},
+        Default = "Default",
+        Callback = function(option)
+            self.Settings.Theme = option
+            -- Theme implementation
+        end
+    })
+    
+    -- Save settings
+    builder:AddButton({
+        Title = "Save Settings",
+        Callback = function()
+            local presetName = self:PromptInput("Enter preset name:")
+            if presetName then
+                self:SavePreset(presetName)
+                NotificationManager:Show("Success", "Settings saved as '" .. presetName .. "'", 2)
+            end
+        end
+    })
+    
+    -- Load settings
+    builder:AddDropdown({
+        Title = "Load Settings",
+        Options = self:GetPresets(),
+        Callback = function(option)
+            self:LoadPreset(option)
+        end
+    })
+    
+    -- Auto save
+    builder:AddToggle({
+        Title = "Auto Save Settings",
+        Default = true,
+        Callback = function(value)
+            self.Settings.AutoSave = value
+        end
+    })
+    
+    -- Destroy GUI
+    builder:AddButton({
+        Title = "Destroy GUI",
+        Callback = function()
+            self:Destroy()
+        end
+    })
+end
+
+function SkyLineHub:PromptInput(title)
+    -- Simple input implementation
+    local inputFrame = Utility:Create("Frame", {
+        Size = UDim2.new(0, 300, 0, 150),
+        Position = UDim2.new(0.5, -150, 0.5, -75),
+        BackgroundColor3 = SkyLineConfig.Colors.Background,
+        BorderSizePixel = 0,
+        ZIndex = 200,
+        Visible = true
+    })
+    inputFrame.Parent = self.Main
+    Utility:CreateCorner(inputFrame, 0.15)
+    Utility:CreateStroke(inputFrame, SkyLineConfig.Colors.Accent, 2)
+    
+    local titleLabel = Utility:Create("TextLabel", {
+        Size = UDim2.new(1, -20, 0, 30),
         Position = UDim2.new(0, 10, 0, 10),
         BackgroundTransparency = 1,
-        ScrollBarThickness = 4,
-        ScrollBarImageColor3 = CONFIG.Colors.Accent,
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
+        Text = title or "Input",
+        Font = SkyLineConfig.Fonts.Bold,
+        TextSize = 16,
+        TextColor3 = SkyLineConfig.Colors.White
     })
+    titleLabel.Parent = inputFrame
     
-    local yPos = 10
-    
-    -- Disable Heavy Effects Toggle
-    local heavyFxToggle = Toggle.new(scrollFrame, "Disable Heavy Effects", self.Settings.DisableHeavyEffects, function(value)
-        self.Settings.DisableHeavyEffects = value
-        CONFIG.DisableHeavyEffects = value
-    end)
-    heavyFxToggle.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    -- Theme Dropdown
-    local themeDropdown = Dropdown.new(scrollFrame, "Theme", {"Default", "Purple", "Orange"}, 1, function(theme, index)
-        self.Theme = CONFIG.Theme[theme]
-        self:ApplyTheme()
-    end)
-    themeDropdown.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    -- Save Settings Button
-    local saveButton = Button.new(scrollFrame, "Save Settings", function()
-        local name = "DefaultPreset"
-        self.Settings.CurrentPreset = name
-        self:SaveSettings(name)
-        self:ShowNotification("Settings saved as '" .. name .. "'")
-    end)
-    saveButton.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    -- Load Settings Dropdown
-    local loadDropdown = Dropdown.new(scrollFrame, "Load Settings", {"DefaultPreset"}, 1, function(preset)
-        self:LoadSettings(preset)
-    end)
-    loadDropdown.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    -- Auto Save Toggle
-    local autoSaveToggle = Toggle.new(scrollFrame, "Auto Save Settings", self.Settings.AutoSave, function(value)
-        self.Settings.AutoSave = value
-    end)
-    autoSaveToggle.Instance.Position = UDim2.new(0, 10, 0, yPos)
-    yPos = yPos + 44
-    
-    -- Destroy GUI Button
-    local destroyButton = Button.new(scrollFrame, "Destroy GUI", function()
-        self:Destroy()
-    end)
-    destroyButton.Instance.Position = UDim2.new(0, 10, 0, yPos)
-end
-
-function SkyLineUI:ApplyTheme()
-    -- Update accent colors throughout UI
-    CONFIG.Colors.Accent = self.Theme.Accent
-    
-    -- Update glow blobs
-    for i, blob in ipairs(self.GlowBlobs) do
-        pcall(function()
-            blob.BackgroundColor3 = i % 2 == 0 and self.Theme.Glow1 or self.Theme.Glow2
-        end)
-    end
-end
-
-function SkyLineUI:ShowNotification(message)
-    local notification = Utility:Create("TextLabel", {
-        Name = "Notification",
-        Parent = self.ScreenGui,
-        Size = UDim2.new(0, 200, 0, 40),
-        Position = UDim2.new(0.5, -100, 0, 10),
-        BackgroundColor3 = CONFIG.Colors.Secondary,
-        BorderSizePixel = 0,
-        Text = message or "Notification",
-        TextColor3 = CONFIG.Colors.White,
+    local inputBox = Utility:Create("TextBox", {
+        Size = UDim2.new(1, -20, 0, 40),
+        Position = UDim2.new(0, 10, 0, 50),
+        BackgroundColor3 = SkyLineConfig.Colors.Secondary,
+        Text = "",
+        Font = SkyLineConfig.Fonts.Main,
         TextSize = 14,
-        Font = CONFIG.Font,
-        ZIndex = 100,
+        TextColor3 = SkyLineConfig.Colors.White,
+        PlaceholderText = "Enter value...",
+        BorderSizePixel = 0,
+        ClearTextOnFocus = false
     })
-    Utility:MakeCorner(CONFIG.CornerRadius.Medium)
-    Utility:MakeStroke(CONFIG.Colors.Border, 1)
+    inputBox.Parent = inputFrame
+    Utility:CreateCorner(inputBox, 0.1)
+    Utility:CreateStroke(inputBox, SkyLineConfig.Colors.Border, 1)
     
-    -- Animate notification
-    local tween = TweenService:Create(notification, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Position = UDim2.new(0.5, -100, 0, 50),
+    local result = nil
+    
+    local confirmButton = Utility:Create("TextButton", {
+        Size = UDim2.new(0, 100, 0, 35),
+        Position = UDim2.new(0.5, -105, 0, 100),
+        BackgroundColor3 = SkyLineConfig.Colors.Accent,
+        Text = "OK",
+        Font = SkyLineConfig.Fonts.Bold,
+        TextSize = 14,
+        TextColor3 = SkyLineConfig.Colors.White,
+        BorderSizePixel = 0
     })
-    tween:Play()
+    confirmButton.Parent = inputFrame
+    Utility:CreateCorner(confirmButton, 0.1)
     
-    task.delay(3, function()
-        local tween2 = TweenService:Create(notification, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-            Position = UDim2.new(0.5, -100, 0, -40),
-            Transparency = 1,
-        })
-        tween2:Play()
-        tween2.Completed:Connect(function()
-            Utility:SafeDestroy(notification)
-        end)
+    local cancelButton = Utility:Create("TextButton", {
+        Size = UDim2.new(0, 100, 0, 35),
+        Position = UDim2.new(0.5, 5, 0, 100),
+        BackgroundColor3 = SkyLineConfig.Colors.Secondary,
+        Text = "Cancel",
+        Font = SkyLineConfig.Fonts.Main,
+        TextSize = 14,
+        TextColor3 = SkyLineConfig.Colors.White,
+        BorderSizePixel = 0
+    })
+    cancelButton.Parent = inputFrame
+    Utility:CreateCorner(cancelButton, 0.1)
+    
+    confirmButton.MouseButton1Click:Connect(function()
+        result = inputBox.Text
+        inputFrame:Destroy()
     end)
-end
-
-function SkyLineUI:SaveSettings(name)
-    local success, err = pcall(function()
-        local settings = {
-            Theme = self.Settings.Theme or "Default",
-            AutoSave = self.Settings.AutoSave,
-            DisableHeavyEffects = self.Settings.DisableHeavyEffects,
-            Toggles = {},
-            Sliders = {},
-        }
-        
-        -- For now just save settings
-        if not isfolder("SkyLineHub") then
-            makefolder("SkyLineHub")
+    
+    cancelButton.MouseButton1Click:Connect(function()
+        result = nil
+        inputFrame:Destroy()
+    end)
+    
+    inputBox.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            result = inputBox.Text
+            inputFrame:Destroy()
         end
-        
-        writefile("SkyLineHub/" .. name .. ".json", game:GetService("HttpService"):JSONEncode(settings))
     end)
     
-    if not success then
-        warn("Failed to save settings: " .. tostring(err))
+    -- Wait for result (max 10 seconds)
+    local startTime = tick()
+    while not result and tick() - startTime < 10 do
+        task.wait(0.1)
+    end
+    
+    return result
+end
+
+function SkyLineHub:SavePreset(name)
+    -- Save settings to memory
+    self.Presets = self.Presets or {}
+    self.Presets[name] = {
+        Settings = self.Settings,
+        ToggleStates = {}
+    }
+    
+    -- Save all toggle states
+    for _, tab in pairs(self.Tabs) do
+        for _, child in ipairs(tab:GetChildren()) do
+            if child:IsA("Frame") and child:FindFirstChild("Toggle") then
+                -- Save toggle state
+            end
+        end
     end
 end
 
-function SkyLineUI:LoadSettings(name)
-    local success, data = pcall(function()
-        local content = readfile("SkyLineHub/" .. name .. ".json")
-        return game:GetService("HttpService"):JSONDecode(content)
-    end)
-    
-    if success and data then
-        self.Settings.Theme = data.Theme or "Default"
-        self.Settings.AutoSave = data.AutoSave or true
-        self.Settings.DisableHeavyEffects = data.DisableHeavyEffects or false
-        self:ApplyTheme()
+function SkyLineHub:LoadPreset(name)
+    -- Load settings from memory
+    if self.Presets and self.Presets[name] then
+        self.Settings = self.Presets[name].Settings
+        NotificationManager:Show("Success", "Preset '" .. name .. "' loaded!", 2)
     end
 end
 
-function SkyLineUI:Destroy()
-    Utility:SafeDestroy(self.ScreenGui)
-    self.ScreenGui = nil
+function SkyLineHub:GetPresets()
+    if not self.Presets then return {} end
+    local presets = {}
+    for name in pairs(self.Presets) do
+        table.insert(presets, name)
+    end
+    return presets
 end
 
--- ============================================================
--- PUBLIC API
--- ============================================================
+function SkyLineHub:Destroy()
+    Utility:SafeCall(function()
+        if self.Main then
+            self.Main:Destroy()
+        end
+    end)
+end
 
-function SkyLine:Create()
-    local ui = SkyLineUI.new()
+-- ============================================
+-- INITIALIZATION & EXAMPLE USAGE
+-- ============================================
+function SkyLineHub:Init()
+    -- Create all tab content
+    self:CreateHomeTab()
+    self:CreateMainTab()
+    self:CreatePlayerTab()
+    self:CreateLoadScriptTab()
+    self:CreateSettingsTab()
+    
+    -- Final setup
+    self:Finalize()
+end
+
+function SkyLineHub:Finalize()
+    -- Any final initialization
+end
+
+-- ============================================
+-- EXAMPLE USAGE
+-- ============================================
+local function ExampleUsage()
+    -- Create SkyLine Hub
+    local ui = SkyLineHub.new()
     ui:Create()
     
-    -- Build all tabs
-    ui:BuildHomeTab()
-    ui:BuildMainTab()
-    ui:BuildPlayerTab()
-    ui:BuildLoadScriptTab()
-    ui:BuildSettingsTab()
+    -- Wait for loading to complete
+    task.delay(3, function()
+        ui:Init()
+        
+        print("SkyLine Hub loaded successfully!")
+    end)
     
     return ui
 end
 
-function SkyLine:CreateWindow(config)
-    config = config or {}
-    
-    local ui = self:Create()
-    
-    -- Apply custom config
-    if config.Theme then
-        ui.Theme = CONFIG.Theme[config.Theme] or CONFIG.Theme.Default
-        ui:ApplyTheme()
-    end
-    
-    return ui
-end
+-- Uncomment to run example
+-- local hub = ExampleUsage()
 
-return SkyLine
+return SkyLineHub
