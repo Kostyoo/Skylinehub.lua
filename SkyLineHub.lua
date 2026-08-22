@@ -37,9 +37,8 @@ local FONTS = {
     Regular = Enum.Font.Gotham,
     Bold = Enum.Font.GothamBold,
     Medium = Enum.Font.GothamMedium,
-    Light = Enum.Font.GothamLight,
+    Light = Enum.Font.GothamThin,   -- Исправлено: GothamLight не существует
 }
-
 -- Utility functions
 local function GetViewport()
     return workspace.CurrentCamera.ViewportSize
