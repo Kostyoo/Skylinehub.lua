@@ -1,683 +1,3214 @@
--- ==================================================
--- SkyLine Hub UI Library v1.1 (Fixed & Enhanced)
--- Production-ready UI for Roblox Exploits
--- ==================================================
+--[[
+	═════════════════════════════════════════════════════════
+	  SKYLINE HUB • UI Library v1.0 • Pure Lua • No deps
+	  KRNL / Synapse / Fluxus / Wave / Delta compatible
+	═════════════════════════════════════════════════════════
+]]
 
-local SkyLine = {}
-SkyLine.__index = SkyLine
+-- [0] GUARD -----------------------------------------------------------
+do
+	local g = _G
+	pcall(function() if getgenv then g = getgenv() end end)
+	if g.SkyLineHubInstance and type(g.SkyLineHubInstance.Destroy) == "function" then
+		pcall(function() g.SkyLineHubInstance:Destroy() end)
+	end
+end
 
--- Services
-local TweenService = game:GetService("TweenService")
-local UIS = game:GetService("UserInputService")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+-- [1] SERVICES --------------------------------------------------------
+local TweenService     = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService       = game:GetService("RunService")
+local HttpService      = game:GetService("HttpService")
+local Players          = game:GetService("Players")
+local Stats            = game:GetService("Stats")
+local Lighting         = game:GetService("Lighting")
+local TextService      = game:GetService("TextService")
 
--- Utilities
+local LocalPlayer = Players.LocalPlayer
+local tries = 0
+while not LocalPlayer and tries < 100 do
+	task.wait(0.1)
+	tries = tries + 1
+	LocalPlayer = Players.LocalPlayer
+end
+if not LocalPlayer then
+	warn("[SkyLine Hub] LocalPlayer not found")
+	return {}
+end
+
+-- [2] SHORTCUTS -------------------------------------------------------
+local C      = Color3.fromRGB
+local floor  = math.floor
+local Insert = table.insert
+
+local function clamp(v, a, b) if v < a then return a elseif v > b then return b end return v end
+local function round(v, inc) inc = inc or 1 return floor(v / inc + 0.5) * inc end
+
+-- [3] COLORS / FONTS / THEMES -----------------------------------------
+local COLORS = {
+	Background  = C(34, 49, 69),
+	Secondary   = C(52, 65, 83),
+	Stroke      = C(67, 85, 109),
+	Accent      = C(91, 196, 203),
+	Text        = C(240, 244, 248),
+	SubText     = C(168, 180, 196),
+	Hover       = C(45, 61, 85),
+	HoverStrong = C(58, 78, 106),
+	Danger      = C(196, 74, 84),
+	DangerHover = C(160, 55, 64),
+}
+
+local FONT      = Enum.Font.Gotham
+local FONT_MED  = Enum.Font.GothamMedium
+local FONT_BOLD = Enum.Font.GothamBold
+local FONT_ICON = Enum.Font.SourceSansBold
+
+local THEMES = {
+	["Ocean"]        = { Accent = C(91, 196, 203),  GlowA = C(96, 88, 235),  GlowB = C(91, 196, 203),  Start = C(72, 110, 150) },
+	["Indigo Night"] = { Accent = C(139, 122, 255), GlowA = C(88, 70, 230),  GlowB = C(160, 120, 255), Start = C(90, 95, 170) },
+	["Emerald"]      = { Accent = C(80, 220, 150),  GlowA = C(40, 180, 130), GlowB = C(130, 255, 200), Start = C(60, 140, 110) },
+	["Crimson"]      = { Accent = C(255, 105, 120), GlowA = C(210, 60, 100), GlowB = C(255, 140, 160), Start = C(170, 85, 100) },
+}
+local Theme = THEMES.Ocean
+
+-- [4] SCALE SYSTEM ----------------------------------------------------
+local Camera    = workspace.CurrentCamera
+local SCALE     = 1
+local ResizeCbs = {}
+
+local function ComputeScale()
+	local vp = Vector2.new(1920, 1080)
+	pcall(function()
+		if Camera then vp = Camera.ViewportSize end
+	end)
+	SCALE = clamp(math.min(vp.X / 1280, vp.Y / 720), 0.55, 2)
+end
+ComputeScale()
+
+local function S(v) return v * SCALE end
+local function OnResize(fn) Insert(ResizeCbs, fn) end
+
+
+-- [5] INSTANCE HELPERS ------------------------------------------------
+local function New(class, props, children)
+	local inst = Instance.new(class)
+	if props then
+		for k, v in pairs(props) do
+			if k ~= "Parent" then inst[k] = v end
+		end
+	end
+	if children then
+		for _, ch in ipairs(children) do ch.Parent = inst end
+	end
+	if props and props.Parent then inst.Parent = props.Parent end
+	return inst
+end
+
+local function Corner(parent, px)
+	return New("UICorner", { CornerRadius = UDim.new(0, px or 8), Parent = parent })
+end
+
+local function Pad(parent, l, t, r, b)
+	return New("UIPadding", {
+		PaddingLeft   = UDim.new(0, l or 0),
+		PaddingTop    = UDim.new(0, t or 0),
+		PaddingRight  = UDim.new(0, r or 0),
+		PaddingBottom = UDim.new(0, b or 0),
+		Parent        = parent,
+	})
+end
+
+local function StrokeOf(parent, color, thickness, transparency)
+	return New("UIStroke", {
+		Color           = color or COLORS.Stroke,
+		Thickness       = thickness or 1,
+		Transparency    = transparency or 0,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Parent          = parent,
+	})
+end
+
+local OrderCounter = 0
+local function NextOrder()
+	OrderCounter = OrderCounter + 1
+	return OrderCounter
+end
+
+local function ListLayout(parent, gap)
+	return New("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		Padding       = UDim.new(0, gap or 0),
+		SortOrder     = Enum.SortOrder.LayoutOrder,
+		Parent        = parent,
+	})
+end
+
+local function Measure(text, size, font)
+	local ok, res = pcall(function()
+		return TextService:GetTextSize(tostring(text), size, font or FONT_MED, Vector2.new(10000, 10000))
+	end)
+	if ok and res then return res.X end
+	return #tostring(text) * size * 0.58
+end
+
+-- [6] CONNECTION HUB / THREADS / TWEEN --------------------------------
+local Conns = {}
+local function Bind(signal, fn)
+	local ok, conn = pcall(function() return signal:Connect(fn) end)
+	if ok and conn then Insert(Conns, conn) return conn end
+	return nil
+end
+
+local Threads = {}
+local function Spawn(fn)
+	local co = task.spawn(fn)
+	Insert(Threads, co)
+	return co
+end
+
+local HeavyOff = false
+
 local function SafeCall(fn, ...)
-    local ok, res = pcall(fn, ...)
-    if not ok then warn("[SkyLine] Error:", res) end
-    return ok, res
+	if type(fn) ~= "function" then return nil end
+	local args = { ... }
+	local ok, err = pcall(fn, unpack(args))
+	if not ok then warn("[SkyLine Hub] callback error:", err) end
+	return ok
 end
 
-local function CreateRoundFrame(parent, size, position, color, radius)
-    local frame = Instance.new("Frame")
-    frame.Size = size
-    frame.Position = position
-    frame.BackgroundColor3 = color
-    frame.BorderSizePixel = 0
-    frame.Parent = parent
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, radius or 10)
-    corner.Parent = frame
-    return frame
+local function Tween(obj, dur, props, style, dir)
+	if not obj then return nil end
+	dur = dur or 0.25
+	if HeavyOff then dur = math.min(dur, 0.12) style = Enum.EasingStyle.Linear dir = nil end
+	local ok, tw = pcall(function()
+		return TweenService:Create(obj,
+			TweenInfo.new(dur, style or Enum.EasingStyle.Quint, dir or Enum.EasingDirection.Out),
+			props)
+	end)
+	if not ok or not tw then
+		pcall(function()
+			for k, v in pairs(props) do obj[k] = v end
+		end)
+		return nil
+	end
+	pcall(function() tw:Play() end)
+	return tw
 end
 
-local function CreateTextLabel(parent, text, size, position, font, textColor, textSize)
-    local label = Instance.new("TextLabel")
-    label.Size = size
-    label.Position = position
-    label.BackgroundTransparency = 1
-    label.Font = font or Enum.Font.Gotham
-    label.Text = text or ""
-    label.TextColor3 = textColor or Color3.fromRGB(255, 255, 255)
-    label.TextSize = textSize or 14
-    label.TextWrapped = true
-    label.Parent = parent
-    return label
+Bind(workspace:GetPropertyChangedSignal("CurrentCamera"), function()
+	Camera = workspace.CurrentCamera
+	ComputeScale()
+	for _, cb in ipairs(ResizeCbs) do pcall(cb) end
+end)
+if Camera then
+	Bind(Camera:GetPropertyChangedSignal("ViewportSize"), function()
+		ComputeScale()
+		for _, cb in ipairs(ResizeCbs) do pcall(cb) end
+	end)
 end
 
-local function CreateUIScale(parent, baseSize)
-    local scale = Instance.new("UIScale")
-    scale.Parent = parent
-    local function update()
-        local vp = parent.AbsoluteSize
-        if vp.X > 0 and vp.Y > 0 then
-            scale.Scale = math.min(vp.X / baseSize.X, vp.Y / baseSize.Y)
-        end
-    end
-    update()
-    parent.Changed:Connect(update)
-    return scale
+
+-- [7] THEME REGISTRY --------------------------------------------------
+local ActiveESP   = nil
+local StaticGlow  = nil
+
+local ThemeBinds = {}
+local function BindTheme(obj, prop, kind)
+	Insert(ThemeBinds, { obj = obj, prop = prop, kind = kind })
 end
 
--- ==================================================
--- КРАСИВЫЙ ЗАГРУЗОЧНЫЙ ЭКРАН (Enhanced)
--- ==================================================
-local function CreateLoadingScreen(parent, onComplete)
-    -- Фон затемнения
-    local bgFrame = Instance.new("Frame")
-    bgFrame.Size = UDim2.fromScale(1, 1)
-    bgFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    bgFrame.BackgroundTransparency = 0
-    bgFrame.Parent = parent
+local GradientBinds   = {} -- UIGradient (заливка слайдеров)
+local ToggleRenderers = {} -- fn() перерисовка тумблеров при смене темы
 
-    -- Центральное окно с градиентом и свечением
-    local loadingFrame = Instance.new("Frame")
-    loadingFrame.Size = UDim2.fromOffset(0, 0)
-    loadingFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    loadingFrame.BackgroundColor3 = Color3.fromRGB(34, 49, 69)
-    loadingFrame.BackgroundTransparency = 1
-    loadingFrame.Parent = bgFrame
-    loadingFrame.ZIndex = 10
-
-    -- Градиент на фоне
-    local gradient = Instance.new("UIGradient")
-    gradient.Rotation = 45
-    gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 65, 83)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(34, 49, 69))
-    })
-    gradient.Parent = loadingFrame
-
-    -- Светящаяся обводка (UIStroke)
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(91, 196, 203)
-    stroke.Thickness = 2
-    stroke.Transparency = 0.5
-    stroke.Parent = loadingFrame
-
-    -- Скругление
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 15)
-    corner.Parent = loadingFrame
-
-    -- Заголовок с градиентом
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0.3, 0)
-    title.Position = UDim2.new(0, 10, 0, 25)
-    title.BackgroundTransparency = 1
-    title.Font = Enum.Font.GothamBold
-    title.Text = "SkyLine Hub"
-    title.TextSize = 35
-    title.TextColor3 = Color3.fromRGB(91, 196, 203)
-    title.Parent = loadingFrame
-    title.ZIndex = 2
-
-    local titleStroke = Instance.new("UIStroke")
-    titleStroke.Color = Color3.fromRGB(91, 196, 203)
-    titleStroke.Thickness = 1
-    titleStroke.Transparency = 0.2
-    titleStroke.Parent = title
-
-    -- Текст "Загрузка..."
-    local loadingText = CreateTextLabel(loadingFrame, "Загрузка...", UDim2.new(1, 0, 0.2, 0), UDim2.new(0, 0, 0, 130), Enum.Font.Gotham, Color3.fromRGB(255, 255, 255), 14)
-    loadingText.TextTransparency = 0.5
-
-    -- Анимированные шарики (9 штук)
-    local balls = {}
-    local ballCount = 9
-    for i = 1, ballCount do
-        local ball = Instance.new("Frame")
-        ball.Size = UDim2.fromOffset(12, 12)
-        ball.Position = UDim2.new(0.5, -48 + i * 12, 0, 180)
-        ball.BackgroundColor3 = Color3.fromRGB(91, 196, 203)
-        ball.Parent = loadingFrame
-        ball.ZIndex = 2
-
-        local bCorner = Instance.new("UICorner")
-        bCorner.CornerRadius = UDim.new(1, 0)
-        bCorner.Parent = ball
-
-        -- Свечение шариков
-        local bStroke = Instance.new("UIStroke")
-        bStroke.Color = Color3.fromRGB(91, 196, 203)
-        bStroke.Thickness = 1
-        bStroke.Transparency = 0.4
-        bStroke.Parent = ball
-
-        table.insert(balls, ball)
-    end
-
-    -- Анимация появления (Scale + Transparency)
-    loadingFrame.Size = UDim2.fromOffset(340, 220)
-    loadingFrame.BackgroundTransparency = 1
-    TweenService:Create(loadingFrame, TweenInfo.new(0.7, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.1}):Play()
-    TweenService:Create(loadingFrame, TweenInfo.new(0.7, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.fromOffset(340, 220)}):Play()
-
-    -- Волна из шариков
-    local waveTimer = 0
-    local waveConnection
-    waveConnection = RunService.RenderStepped:Connect(function()
-        waveTimer = waveTimer + 0.03
-        for i, ball in ipairs(balls) do
-            local yPos = 180 + math.sin((waveTimer + i * 0.2) * math.pi * 2) * 12
-            TweenService:Create(ball, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -48 + i * 12, 0, yPos)}):Play()
-        end
-    end)
-
-    -- Небольшая задержка для красоты
-    task.wait(2.5)
-
-    -- Убираем загрузочный экран
-    waveConnection:Disconnect()
-    TweenService:Create(loadingFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
-    task.wait(0.4)
-    bgFrame:Destroy()
-
-    -- Вызываем создание главного окна
-    SafeCall(onComplete)
+local function ApplyTheme(name)
+	local th = THEMES[name]
+	if not th then return false end
+	Theme = th
+	for _, bind in ipairs(ThemeBinds) do
+		pcall(function()
+			if bind.obj and bind.obj.Parent then bind.obj[bind.prop] = th[bind.kind] end
+		end)
+	end
+	for _, grad in ipairs(GradientBinds) do
+		pcall(function() grad.Color = ColorSequence.new(th.Start, th.Accent) end)
+	end
+	for _, fn in ipairs(ToggleRenderers) do pcall(fn) end
+	pcall(function() if ActiveESP then ActiveESP.FillColor = th.Accent end end)
+	pcall(function() if StaticGlow then StaticGlow() end end)
+	return true
 end
 
--- ==================================================
--- MAIN WINDOW
--- ==================================================
-function SkyLine.CreateWindow(config)
-    config = config or {}
-    local Window = setmetatable({}, SkyLine)
-    Window.Config = config
-    Window.Tabs = {}
-    Window.Hidden = false
-    Window.Blocks = {}
-
-    -- ScreenGui
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "SkyLineHub"
-    screenGui.IgnoreGuiInset = true
-    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    screenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
-
-    -- Основной фрейм
-    local baseSize = Vector2.new(1000, 600)
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.fromOffset(baseSize.X, baseSize.Y)
-    mainFrame.Position = UDim2.new(0.5, -baseSize.X/2, 0.5, -baseSize.Y/2)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(34, 49, 69)
-    mainFrame.BackgroundTransparency = 0
-    mainFrame.BorderSizePixel = 0
-    mainFrame.Parent = screenGui
-    mainFrame.Visible = false -- Скроем до загрузки
-
-    local mainCorner = Instance.new("UICorner")
-    mainCorner.CornerRadius = UDim.new(0, 15)
-    mainCorner.Parent = mainFrame
-
-    local mainStroke = Instance.new("UIStroke")
-    mainStroke.Color = Color3.fromRGB(52, 65, 83)
-    mainStroke.Thickness = 2
-    mainStroke.Parent = mainFrame
-
-    -- Сохраняем ссылки
-    Window.MainFrame = mainFrame
-    Window.ScreenGui = screenGui
-
-    -- UIScale для адаптивности
-    CreateUIScale(mainFrame, baseSize)
-
-    -- Загрузка (красивый экран)
-    CreateLoadingScreen(screenGui, function()
-        mainFrame.Visible = true
-        Window:SetupMainUI()
-    end)
-
-    return Window
+-- [8] SCREENGUI / LAYERS / AMBIENT GLOW -------------------------------
+local function Protect(gui)
+	pcall(function()
+		if syn and syn.protect_gui then syn.protect_gui(gui) end
+	end)
+	local parented = false
+	pcall(function()
+		if gethui then gui.Parent = gethui() parented = true end
+	end)
+	if not parented then
+		local ok = pcall(function() gui.Parent = game:GetService("CoreGui") end)
+		if not ok or not gui.Parent then
+			gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+		end
+	end
 end
 
-function SkyLine:SetupMainUI()
-    -- Боковая панель
-    self.NavPanel = CreateRoundFrame(self.MainFrame, UDim2.fromOffset(60, 360), UDim2.new(0, 20, 0.5, -180), Color3.fromRGB(52, 65, 83), 12)
-    self.NavPanel.ZIndex = 2
+local ScreenGui = New("ScreenGui", {
+	Name           = "SkyLineHub",
+	ResetOnSpawn   = false,
+	IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	DisplayOrder   = 9999,
+})
+Protect(ScreenGui)
 
-    -- Кнопки навигации
-    local buttonData = {
-        {name = "Home", id = "112770735347738"},
-        {name = "Main", id = "92091304135140"},
-        {name = "Player", id = "12345678901234"},
-        {name = "LoadScript", id = "83975792443912"},
-        {name = "Settings", id = "125743894366007"},
-        {name = "Exit", id = "96518596121178"}
-    }
+local AmbientDim = New("Frame", {
+	Name                   = "AmbientDim",
+	BackgroundColor3       = C(0, 0, 0),
+	BackgroundTransparency = 1,
+	BorderSizePixel        = 0,
+	Size                   = UDim2.fromScale(1, 1),
+	Parent                 = ScreenGui,
+})
 
-    self.NavButtons = {}
-    self.ActiveNavIndex = 1
+local GlowLayer = New("Frame", {
+	Name                   = "GlowLayer",
+	BackgroundTransparency = 1,
+	BorderSizePixel        = 0,
+	Size                   = UDim2.fromScale(1, 1),
+	Parent                 = ScreenGui,
+})
 
-    local yPos = 15
-    for i, data in ipairs(buttonData) do
-        local btn = Instance.new("ImageButton")
-        btn.Size = UDim2.fromOffset(40, 40)
-        btn.Position = UDim2.new(0.5, -20, 0, yPos)
-        btn.BackgroundTransparency = 1
-        btn.Image = "rbxassetid://" .. data.id
-        btn.ScaleType = Enum.ScaleType.Fit
-        btn.Parent = self.NavPanel
-        btn.ZIndex = 3
-        btn.MouseButton1Click:Connect(function()
-            self:SwitchTab(i)
-        end)
-        table.insert(self.NavButtons, btn)
-        yPos = yPos + 50
-    end
-
-    -- Контент
-    self.ContentFrame = Instance.new("Frame")
-    self.ContentFrame.Size = UDim2.new(0, 700, 0, 540)
-    self.ContentFrame.Position = UDim2.new(0, 90, 0, 30)
-    self.ContentFrame.BackgroundTransparency = 1
-    self.ContentFrame.Parent = self.MainFrame
-
-    -- Создаем вкладки
-    self:CreateHomeTab()
-    self:CreateMainTab()
-    self:CreatePlayerTab()
-    self:CreateLoadScriptTab()
-    self:CreateSettingsTab()
-
-    -- Показываем первую вкладку
-    self:SwitchTab(1)
-
-    -- Кнопка выхода (стрелочка)
-    self:SetupExitButton()
+local GlowEdges = {}
+do
+	local defs = {
+		{ Size = UDim2.new(1, 0, 0, S(260)), Pos = UDim2.new(0, 0, 0, 0),        Rot = 90, Seq = { { 0, 0.05 }, { 1, 1 } } },
+		{ Size = UDim2.new(1, 0, 0, S(260)), Pos = UDim2.new(0, 0, 1, -S(260)), Rot = 90, Seq = { { 0, 1 }, { 1, 0.05 } } },
+		{ Size = UDim2.new(0, S(260), 1, 0), Pos = UDim2.new(0, 0, 0, 0),        Rot = 0,  Seq = { { 0, 0.05 }, { 1, 1 } } },
+		{ Size = UDim2.new(0, S(260), 1, 0), Pos = UDim2.new(1, -S(260), 0, 0), Rot = 0,  Seq = { { 0, 1 }, { 1, 0.05 } } },
+	}
+	for i, d in ipairs(defs) do
+		local kps = {}
+		for _, p in ipairs(d.Seq) do
+			kps[#kps + 1] = NumberSequenceKeypoint.new(p[1], p[2])
+		end
+		local f = New("Frame", {
+			BackgroundColor3       = Theme.GlowA:Lerp(Theme.GlowB, 0.5),
+			BackgroundTransparency = 1,
+			BorderSizePixel        = 0,
+			Size                   = d.Size,
+			Position               = d.Pos,
+			ZIndex                 = i,
+			Parent                 = GlowLayer,
+		})
+		New("UIGradient", { Rotation = d.Rot, Transparency = NumberSequence.new(kps), Parent = f })
+		GlowEdges[i] = {
+			Frame = f, Base = 0.10,
+			s1 = 0.10 + i * 0.037, s2 = 0.06 + i * 0.053,
+			p1 = (i - 1) * 1.73,   p2 = (i - 1) * 2.31,
+		}
+	end
 end
 
-function SkyLine:SwitchTab(index)
-    if self.ActiveNavIndex == index then return end
-    local oldBtn = self.NavButtons[self.ActiveNavIndex]
-    local newBtn = self.NavButtons[index]
-
-    TweenService:Create(oldBtn, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
-    TweenService:Create(newBtn, TweenInfo.new(0.3), {BackgroundTransparency = 0.5}):Play()
-
-    self.ActiveNavIndex = index
-    local direction = index > self.ActiveNavIndex and 1 or -1
-
-    for tabName, tabFrame in pairs(self.Tabs) do
-        if tabFrame.Visible then
-            TweenService:Create(tabFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), 
-                {Position = UDim2.new(0, 0, 0.5, direction * 200), BackgroundTransparency = 1}):Play()
-            task.wait(0.05)
-            tabFrame.Visible = false
-        end
-    end
-
-    local newTabFrame = self.Tabs[index]
-    newTabFrame.Visible = true
-    newTabFrame.BackgroundTransparency = 1
-    newTabFrame.Position = UDim2.new(0, 0, 0.5, -direction * 200)
-    TweenService:Create(newTabFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
-        {Position = UDim2.new(0, 0, 0.5, 0), BackgroundTransparency = 0}):Play()
+StaticGlow = function()
+	local mix = Theme.GlowA:Lerp(Theme.GlowB, 0.5)
+	for _, e in ipairs(GlowEdges) do
+		e.Frame.BackgroundColor3 = mix
+	end
 end
 
--- Вкладки
-function SkyLine:CreateHomeTab()
-    local tab = CreateRoundFrame(self.ContentFrame, UDim2.fromScale(1, 1), UDim2.new(0, 0, 0.5, -270), Color3.fromRGB(52, 65, 83), 12)
-    tab.Visible = false
-    tab.Parent = self.ContentFrame
-    self.Tabs[1] = tab
+local GlowT = 0
+Bind(RunService.Heartbeat, function(dt)
+	GlowT = GlowT + dt
+	if HeavyOff then return end
+	for _, e in ipairs(GlowEdges) do
+		local m = 0.5 + 0.5 * math.sin(GlowT * e.s1 + e.p1) * math.cos(GlowT * e.s2 + e.p2)
+		e.Frame.BackgroundColor3 = Theme.GlowA:Lerp(Theme.GlowB, m)
+	end
+end)
 
-    local profileFrame = CreateRoundFrame(tab, UDim2.fromOffset(80, 80), UDim2.new(0, 20, 0, 20), Color3.fromRGB(34, 49, 69), 40)
-    local avatar = Instance.new("ImageLabel")
-    avatar.Size = UDim2.new(1, -10, 1, -10)
-    avatar.Position = UDim2.new(0.5, -35, 0.5, -35)
-    avatar.BackgroundTransparency = 1
-    avatar.Image = "rbxthumb://avatar?type=Head&id=" .. Players.LocalPlayer.UserId
-    avatar.ScaleType = Enum.ScaleType.Fit
-    avatar.Parent = profileFrame
+local WindowLayer = New("CanvasGroup", {
+	Name                   = "WindowLayer",
+	BackgroundTransparency = 1,
+	BorderSizePixel        = 0,
+	GroupTransparency      = 0,
+	Size                   = UDim2.fromScale(1, 1),
+	Parent                 = ScreenGui,
+})
 
-    local infoFrame = CreateRoundFrame(tab, UDim2.fromOffset(250, 80), UDim2.new(0, 120, 0, 20), Color3.fromRGB(34, 49, 69), 8)
-    local playerIdText = CreateTextLabel(infoFrame, "ID: " .. Players.LocalPlayer.UserId, UDim2.new(1, -10, 0.3, -5), UDim2.new(0, 5, 0, 5), Enum.Font.Gotham, Color3.fromRGB(255, 255, 255), 14)
-    playerIdText.TextXAlignment = Enum.TextXAlignment.Left
-    local pingText = CreateTextLabel(infoFrame, "Ping: 0", UDim2.new(1, -10, 0.3, -5), UDim2.new(0, 5, 0, 30), Enum.Font.Gotham, Color3.fromRGB(255, 255, 255), 14)
-    pingText.TextXAlignment = Enum.TextXAlignment.Left
-    local fpsText = CreateTextLabel(infoFrame, "FPS: 0", UDim2.new(1, -10, 0.3, -5), UDim2.new(0, 5, 0, 55), Enum.Font.Gotham, Color3.fromRGB(255, 255, 255), 14)
-    fpsText.TextXAlignment = Enum.TextXAlignment.Left
+local PopupLayer = New("Frame", {
+	Name                   = "PopupLayer",
+	BackgroundTransparency = 1,
+	BorderSizePixel        = 0,
+	Size                   = UDim2.fromScale(1, 1),
+	Parent                 = ScreenGui,
+})
 
-    playerIdText.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            setclipboard(tostring(Players.LocalPlayer.UserId))
-            SkyLine:Notify("ID скопирован")
-        end
-    end)
+local ToastLayer = New("Frame", {
+	Name                   = "ToastLayer",
+	BackgroundTransparency = 1,
+	BorderSizePixel        = 0,
+	Size                   = UDim2.fromScale(1, 1),
+	Parent                 = ScreenGui,
+})
 
-    RunService.Heartbeat:Connect(function(step)
-        pingText.Text = "Ping: " .. math.floor(Players.LocalPlayer:GetNetworkPing() * 1000)
-        fpsText.Text = "FPS: " .. math.floor(1 / step)
-    end)
+
+-- [9] NOTIFICATIONS ---------------------------------------------------
+local ToastList = {}
+
+local function RelayoutToasts()
+	local y = S(14)
+	for _, card in ipairs(ToastList) do
+		Tween(card, 0.28, { Position = UDim2.new(1, -S(14), 0, y) }, Enum.EasingStyle.Quart)
+		y = y + (card:GetAttribute("H") or S(52)) + S(8)
+	end
 end
 
-function SkyLine:CreateMainTab()
-    local tab = CreateRoundFrame(self.ContentFrame, UDim2.fromScale(1, 1), UDim2.new(0, 0, 0.5, -270), Color3.fromRGB(52, 65, 83), 12)
-    tab.Visible = false
-    tab.Parent = self.ContentFrame
-    self.Tabs[2] = tab
-
-    self.BlockContainer = Instance.new("Frame")
-    self.BlockContainer.Size = UDim2.new(1, -90, 1, -40)
-    self.BlockContainer.Position = UDim2.new(0, 10, 0, 10)
-    self.BlockContainer.BackgroundTransparency = 1
-    self.BlockContainer.Parent = tab
+local function RemoveToast(card)
+	for i = #ToastList, 1, -1 do
+		if ToastList[i] == card then
+			table.remove(ToastList, i)
+			break
+		end
+	end
+	Tween(card, 0.25, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	task.delay(0.26, function() pcall(function() card:Destroy() end) end)
+	RelayoutToasts()
 end
 
-function SkyLine:CreatePlayerTab()
-    local tab = CreateRoundFrame(self.ContentFrame, UDim2.fromScale(1, 1), UDim2.new(0, 0, 0.5, -270), Color3.fromRGB(52, 65, 83), 12)
-    tab.Visible = false
-    tab.Parent = self.ContentFrame
-    self.Tabs[3] = tab
+local function Notify(title, msg, dur)
+	title = tostring(title or "")
+	msg = msg and tostring(msg) or ""
+	dur = dur or 2.6
+	while #ToastList >= 4 do
+		local old = table.remove(ToastList, 1)
+		if old then pcall(function() old:Destroy() end) end
+	end
+	local w = clamp(math.max(Measure(title, S(13), FONT_BOLD), Measure(msg, S(12), FONT)) + S(44), S(190), S(330))
+	local h = msg ~= "" and S(54) or S(40)
+	local card = New("CanvasGroup", {
+		Name              = "Toast",
+		BackgroundColor3  = COLORS.Secondary,
+		BorderSizePixel   = 0,
+		AnchorPoint       = Vector2.new(1, 0),
+		Position          = UDim2.new(1, S(w) + S(30), 0, S(14)),
+		Size              = UDim2.fromOffset(S(w), S(h)),
+		GroupTransparency = 1,
+		ZIndex            = 90,
+		Parent            = ToastLayer,
+	})
+	card:SetAttribute("H", h)
+	Corner(card, S(10))
+	StrokeOf(card)
+	New("Frame", {
+		BackgroundColor3       = Theme.Accent,
+		BackgroundTransparency = 0.1,
+		BorderSizePixel        = 0,
+		Size                   = UDim2.new(0, S(4), 1, 0),
+		Parent                 = card,
+	})
+	New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(16), msg ~= "" and S(8) or 0),
+		Size                   = UDim2.new(1, -S(28), 0, S(16)),
+		Font                   = FONT_BOLD,
+		Text                   = title,
+		TextColor3             = COLORS.Text,
+		TextSize               = S(13),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		Parent                 = card,
+	})
+	if msg ~= "" then
+		New("TextLabel", {
+			BackgroundTransparency = 1,
+			Position               = UDim2.fromOffset(S(16), S(27)),
+			Size                   = UDim2.new(1, -S(28), 0, S(20)),
+			Font                   = FONT,
+			Text                   = msg,
+			TextColor3             = COLORS.SubText,
+			TextSize               = S(12),
+			TextXAlignment         = Enum.TextXAlignment.Left,
+			TextTruncate           = Enum.TextTruncate.AtEnd,
+			Parent                 = card,
+		})
+	end
+	Insert(ToastList, card)
+	Tween(card, 0.2, { GroupTransparency = 0 })
+	RelayoutToasts()
+	task.delay(dur, function() RemoveToast(card) end)
+	return card
 end
 
-function SkyLine:CreateLoadScriptTab()
-    local tab = CreateRoundFrame(self.ContentFrame, UDim2.fromScale(1, 1), UDim2.new(0, 0, 0.5, -270), Color3.fromRGB(52, 65, 83), 12)
-    tab.Visible = false
-    tab.Parent = self.ContentFrame
-    self.Tabs[4] = tab
-
-    self.LoadScriptContainer = Instance.new("Frame")
-    self.LoadScriptContainer.Size = UDim2.new(1, -20, 1, -20)
-    self.LoadScriptContainer.Position = UDim2.new(0, 10, 0, 10)
-    self.LoadScriptContainer.BackgroundTransparency = 1
-    self.LoadScriptContainer.Parent = tab
+-- [10] CLIPBOARD / FILESYSTEM -----------------------------------------
+local function Copy(text)
+	local done = false
+	if type(setclipboard) == "function" then done = pcall(setclipboard, text) end
+	if not done and type(toclipboard) == "function" then done = pcall(toclipboard, text) end
+	return done
 end
 
-function SkyLine:CreateSettingsTab()
-    local tab = CreateRoundFrame(self.ContentFrame, UDim2.fromScale(1, 1), UDim2.new(0, 0, 0.5, -270), Color3.fromRGB(52, 65, 83), 12)
-    tab.Visible = false
-    tab.Parent = self.ContentFrame
-    self.Tabs[5] = tab
-
-    self:AddMainToggle("Отключить тяжёлые эффекты", false, function() end)
-    self:AddMainDropdown("Тема", {"Default", "Neon", "Ocean"}, 1, function() end)
-    self:AddMainButton("Save Settings", function() end)
-    self:AddMainButton("Destroy GUI", function()
-        self.ScreenGui:Destroy()
-    end)
+local FOLDER = "SkyLineHub"
+local FS = {}
+function FS.Write(path, data)
+	if type(writefile) ~= "function" then return false end
+	return pcall(writefile, path, data)
+end
+function FS.Read(path)
+	if type(readfile) ~= "function" then return nil end
+	local ok, r = pcall(readfile, path)
+	if ok then return r end
+	return nil
+end
+function FS.Exists(path)
+	if type(isfile) ~= "function" then return false end
+	local ok, r = pcall(isfile, path)
+	if ok then return r end
+	return false
+end
+function FS.List(folder)
+	if type(listfiles) ~= "function" then return {} end
+	local ok, r = pcall(listfiles, folder)
+	if ok and type(r) == "table" then return r end
+	return {}
+end
+local function EnsureFolder()
+	if type(makefolder) == "function" then pcall(makefolder, FOLDER) end
 end
 
--- Элементы (Toggle, Slider, Dropdown, Button)
-function SkyLine:AddToggle(text, default, callback)
-    local tabFrame = self.Tabs[2]
-    local yPos = #self.Blocks * 50 + 10
 
-    local elementFrame = CreateRoundFrame(tabFrame, UDim2.new(1, -80, 0, 45), UDim2.new(0, 10, 0, yPos), Color3.fromRGB(34, 49, 69), 8)
-    local label = CreateTextLabel(elementFrame, text, UDim2.new(0, 200, 1, 0), UDim2.new(0, 10, 0, 0), Enum.Font.GothamMedium, Color3.fromRGB(255, 255, 255), 14)
-    label.TextXAlignment = Enum.TextXAlignment.Left
+-- [11] FLAGS / PERSISTENCE --------------------------------------------
+local Flags = {}
+local AutoSaveOn = true
+local LoadingFlags = false
+local ASToken = 0
 
-    local toggleFrame = Instance.new("Frame")
-    toggleFrame.Size = UDim2.fromOffset(40, 20)
-    toggleFrame.Position = UDim2.new(1, -50, 0.5, -10)
-    toggleFrame.BackgroundColor3 = Color3.fromRGB(67, 85, 109)
-    toggleFrame.Parent = elementFrame
-    local toggleCorner = Instance.new("UICorner")
-    toggleCorner.CornerRadius = UDim.new(1, 0)
-    toggleCorner.Parent = toggleFrame
+local SavePreset  -- forward
+local LoadPreset  -- forward
 
-    local circle = Instance.new("Frame")
-    circle.Size = UDim2.fromOffset(16, 16)
-    circle.Position = UDim2.new(0, 2, 0.5, -8)
-    circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    circle.Parent = toggleFrame
-    local circleCorner = Instance.new("UICorner")
-    circleCorner.CornerRadius = UDim.new(1, 0)
-    circleCorner.Parent = circle
-
-    local value = default or false
-    local toggleButton = Instance.new("TextButton")
-    toggleButton.Size = UDim2.fromScale(1, 1)
-    toggleButton.BackgroundTransparency = 1
-    toggleButton.Text = ""
-    toggleButton.Parent = toggleFrame
-
-    local function SetToggle(val)
-        value = val
-        if val then
-            toggleFrame.BackgroundColor3 = Color3.fromRGB(91, 196, 203)
-            TweenService:Create(circle, TweenInfo.new(0.2), {Position = UDim2.new(1, -18, 0.5, -8)}):Play()
-        else
-            toggleFrame.BackgroundColor3 = Color3.fromRGB(67, 85, 109)
-            TweenService:Create(circle, TweenInfo.new(0.2), {Position = UDim2.new(0, 2, 0.5, -8)}):Play()
-        end
-        if callback then callback(val) end
-    end
-
-    toggleButton.MouseButton1Click:Connect(function() SetToggle(not value) end)
-    SetToggle(value)
-
-    table.insert(self.Blocks, elementFrame)
-    return {SetValue = SetToggle, GetValue = function() return value end}
+local function RegFlag(name, ctrl)
+	if type(name) == "string" and #name > 0 and type(ctrl) == "table" then
+		Flags[name] = ctrl
+	end
 end
 
-function SkyLine:AddSlider(text, min, max, default, callback)
-    local tabFrame = self.Tabs[2]
-    local yPos = #self.Blocks * 50 + 10
-
-    local elementFrame = CreateRoundFrame(tabFrame, UDim2.new(1, -80, 0, 45), UDim2.new(0, 10, 0, yPos), Color3.fromRGB(34, 49, 69), 8)
-    local label = CreateTextLabel(elementFrame, text, UDim2.new(0, 150, 1, 0), UDim2.new(0, 10, 0, 0), Enum.Font.GothamMedium, Color3.fromRGB(255, 255, 255), 14)
-    label.TextXAlignment = Enum.TextXAlignment.Left
-
-    local sliderFrame = Instance.new("Frame")
-    sliderFrame.Size = UDim2.fromOffset(150, 6)
-    sliderFrame.Position = UDim2.new(1, -180, 0.5, -3)
-    sliderFrame.BackgroundColor3 = Color3.fromRGB(34, 49, 69)
-    sliderFrame.Parent = elementFrame
-    local sliderCorner = Instance.new("UICorner")
-    sliderCorner.CornerRadius = UDim.new(1, 0)
-    sliderCorner.Parent = sliderFrame
-
-    local fill = Instance.new("Frame")
-    fill.Size = UDim2.new(0, 0, 1, 0)
-    fill.BackgroundColor3 = Color3.fromRGB(91, 196, 203)
-    fill.Parent = sliderFrame
-    local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(1, 0)
-    fillCorner.Parent = fill
-
-    local valueText = CreateTextLabel(elementFrame, tostring(default or 0), UDim2.new(0, 30, 0, 20), UDim2.new(1, -50, 0.5, -10), Enum.Font.Gotham, Color3.fromRGB(255, 255, 255), 12)
-
-    local dragging = false
-    local function updateFromMouse()
-        local mouse = UIS:GetMouse()
-        local sliderPos = sliderFrame.AbsolutePosition
-        local sliderSize = sliderFrame.AbsoluteSize.X
-        local localX = math.clamp((mouse.X - sliderPos.X) / sliderSize, 0, 1)
-        local val = min + (max - min) * localX
-        fill.Size = UDim2.new(localX, 0, 1, 0)
-        valueText.Text = tostring(math.floor(val))
-        if callback then callback(val) end
-    end
-
-    sliderFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true; updateFromMouse() end
-    end)
-    UIS.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then updateFromMouse() end
-    end)
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
-    end)
-
-    table.insert(self.Blocks, elementFrame)
-    return {SetValue = function(v) fill.Size = UDim2.new((v-min)/(max-min), 0, 1, 0); valueText.Text = tostring(v) end, GetValue = function() return (max-min)*fill.Size.X.Scale + min end}
+local function ScheduleAutoSave()
+	if not AutoSaveOn or LoadingFlags then return end
+	ASToken = ASToken + 1
+	local myToken = ASToken
+	task.delay(1.2, function()
+		if AutoSaveOn and ASToken == myToken then
+			pcall(SavePreset, "_autosave", true)
+		end
+	end)
 end
 
-function SkyLine:AddButton(text, callback)
-    local tabFrame = self.Tabs[2]
-    local yPos = #self.Blocks * 50 + 10
-
-    local elementFrame = CreateRoundFrame(tabFrame, UDim2.new(1, -80, 0, 40), UDim2.new(0, 10, 0, yPos), Color3.fromRGB(34, 49, 69), 8)
-    local label = CreateTextLabel(elementFrame, text, UDim2.new(1, -20, 1, 0), UDim2.new(0, 10, 0, 0), Enum.Font.GothamMedium, Color3.fromRGB(255, 255, 255), 14)
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    local arrow = Instance.new("TextLabel")
-    arrow.Size = UDim2.fromOffset(20, 20)
-    arrow.Position = UDim2.new(1, -30, 0.5, -10)
-    arrow.Font = Enum.Font.Gotham
-    arrow.Text = "›"
-    arrow.TextColor3 = Color3.fromRGB(255, 255, 255)
-    arrow.Parent = elementFrame
-
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.fromScale(1, 1)
-    btn.BackgroundTransparency = 1
-    btn.Text = ""
-    btn.Parent = elementFrame
-    btn.MouseButton1Click:Connect(function() SafeCall(callback) end)
-
-    table.insert(self.Blocks, elementFrame)
-    return elementFrame
+local function ListPresets()
+	local names = {}
+	for _, path in ipairs(FS.List(FOLDER)) do
+		local base = string.match(path, "[\\/]?([^\\/]*)$") or path
+		if string.sub(base, -8) == ".skyline" then
+			Insert(names, string.sub(base, 1, -9))
+		end
+	end
+	table.sort(names)
+	return names
 end
 
-function SkyLine:AddDropdown(text, options, defaultIndex, callback)
-    local tabFrame = self.Tabs[2]
-    local yPos = #self.Blocks * 50 + 10
-
-    local elementFrame = CreateRoundFrame(tabFrame, UDim2.new(1, -80, 0, 45), UDim2.new(0, 10, 0, yPos), Color3.fromRGB(34, 49, 69), 8)
-    local label = CreateTextLabel(elementFrame, text, UDim2.new(0, 150, 1, 0), UDim2.new(0, 10, 0, 0), Enum.Font.GothamMedium, Color3.fromRGB(255, 255, 255), 14)
-    label.TextXAlignment = Enum.TextXAlignment.Left
-
-    local dropdownBtn = Instance.new("TextButton")
-    dropdownBtn.Size = UDim2.fromOffset(180, 25)
-    dropdownBtn.Position = UDim2.new(1, -200, 0.5, -12)
-    dropdownBtn.BackgroundColor3 = Color3.fromRGB(67, 85, 109)
-    dropdownBtn.Text = options[defaultIndex] or ""
-    dropdownBtn.Font = Enum.Font.Gotham
-    dropdownBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    dropdownBtn.Parent = elementFrame
-    local dropdownCorner = Instance.new("UICorner")
-    dropdownCorner.CornerRadius = UDim.new(0, 5)
-    dropdownCorner.Parent = dropdownBtn
-
-    local selectedIndex = defaultIndex or 1
-    local function updateDropdownText()
-        dropdownBtn.Text = options[selectedIndex]
-        if callback then callback(options[selectedIndex]) end
-    end
-
-    local menuFrame = Instance.new("Frame")
-    menuFrame.Size = UDim2.fromOffset(180, #options * 25)
-    menuFrame.Position = UDim2.new(1, -200, 0.5, 12)
-    menuFrame.BackgroundColor3 = Color3.fromRGB(34, 49, 69)
-    menuFrame.Visible = false
-    menuFrame.ZIndex = 10
-    menuFrame.Parent = elementFrame
-    local menuCorner = Instance.new("UICorner")
-    menuCorner.CornerRadius = UDim.new(0, 5)
-    menuCorner.Parent = menuFrame
-
-    for i, opt in ipairs(options) do
-        local item = Instance.new("TextButton")
-        item.Size = UDim2.new(1, 0, 0, 25)
-        item.Text = opt
-        item.Font = Enum.Font.Gotham
-        item.TextColor3 = Color3.fromRGB(255, 255, 255)
-        item.BackgroundTransparency = 1
-        item.Parent = menuFrame
-        item.MouseEnter:Connect(function() item.BackgroundColor3 = Color3.fromRGB(91, 196, 203) end)
-        item.MouseLeave:Connect(function() item.BackgroundColor3 = Color3.new(1, 1, 1) end)
-        item.MouseButton1Click:Connect(function()
-            selectedIndex = i
-            updateDropdownText()
-            menuFrame.Visible = false
-        end)
-    end
-
-    dropdownBtn.MouseButton1Click:Connect(function()
-        menuFrame.Visible = not menuFrame.Visible
-        dropdownBtn.BackgroundColor3 = menuFrame.Visible and Color3.fromRGB(91, 196, 203) or Color3.fromRGB(67, 85, 109)
-    end)
-
-    table.insert(self.Blocks, elementFrame)
-    return {SetValue = function(i) selectedIndex = i; updateDropdownText() end, GetValue = function() return options[selectedIndex] end}
+SavePreset = function(name, quiet)
+	if type(name) ~= "string" then return false end
+	name = string.gsub(name, "[^%w%-_ ]", "")
+	if #name == 0 then return false end
+	EnsureFolder()
+	local data = { version = "1.0", flags = {} }
+	for flagName, ctrl in pairs(Flags) do
+		local ok, v = pcall(function() return ctrl.Get() end)
+		if ok and v ~= nil then data.flags[flagName] = v end
+	end
+	local okEnc, json = pcall(function() return HttpService:JSONEncode(data) end)
+	if not okEnc or type(json) ~= "string" then
+		if not quiet then Notify("SkyLine Hub", "Ошибка кодирования пресета") end
+		return false
+	end
+	local okWrite = FS.Write(FOLDER .. "/" .. name .. ".skyline", json)
+	if not okWrite and not quiet then
+		Notify("SkyLine Hub", "writefile недоступен в этом экзекуторе")
+	end
+	return okWrite
 end
 
--- ДОБАВЛЕННЫЙ МЕТОД AddLoadScript
-function SkyLine:AddLoadScript(text, callback)
-    local container = self.LoadScriptContainer
-    if not container then return end
-    local yPos = 10
-    local elementFrame = CreateRoundFrame(container, UDim2.new(1, 0, 0, 40), UDim2.new(0, 0, 0, yPos), Color3.fromRGB(34, 49, 69), 8)
-    local label = CreateTextLabel(elementFrame, text, UDim2.new(1, -20, 1, 0), UDim2.new(0, 10, 0, 0), Enum.Font.GothamMedium, Color3.fromRGB(255, 255, 255), 14)
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    local arrow = Instance.new("TextLabel")
-    arrow.Size = UDim2.fromOffset(20, 20)
-    arrow.Position = UDim2.new(1, -30, 0.5, -10)
-    arrow.Font = Enum.Font.Gotham
-    arrow.Text = "›"
-    arrow.TextColor3 = Color3.fromRGB(255, 255, 255)
-    arrow.Parent = elementFrame
-
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.fromScale(1, 1)
-    btn.BackgroundTransparency = 1
-    btn.Text = ""
-    btn.Parent = elementFrame
-    btn.MouseButton1Click:Connect(function() SafeCall(callback) end)
+LoadPreset = function(name, quiet)
+	if type(name) ~= "string" then return false end
+	local raw = FS.Read(FOLDER .. "/" .. name .. ".skyline")
+	if not raw then
+		if not quiet then Notify("SkyLine Hub", "Пресет не найден: " .. name) end
+		return false
+	end
+	local okDec, data = pcall(function() return HttpService:JSONDecode(raw) end)
+	if not okDec or type(data) ~= "table" or type(data.flags) ~= "table" then
+		if not quiet then Notify("SkyLine Hub", "Пресет повреждён: " .. name) end
+		return false
+	end
+	LoadingFlags = true
+	for flagName, value in pairs(data.flags) do
+		local ctrl = Flags[flagName]
+		if ctrl and type(ctrl.Set) == "function" then
+			pcall(ctrl.Set, ctrl, value)
+		end
+	end
+	LoadingFlags = false
+	if not quiet then Notify("SkyLine Hub", "Пресет загружен: " .. name) end
+	return true
 end
 
--- Уведомления
-function SkyLine:Notify(message)
-    local notif = CreateRoundFrame(self.MainFrame, UDim2.fromOffset(200, 30), UDim2.new(1, -210, 0, 10), Color3.fromRGB(34, 49, 69), 8)
-    local text = CreateTextLabel(notif, message, UDim2.new(1, -10, 1, 0), UDim2.new(0, 5, 0, 0), Enum.Font.GothamMedium, Color3.fromRGB(91, 196, 203), 12)
-    text.TextYAlignment = Enum.TextYAlignment.Center
-    notif.BackgroundTransparency = 1
-    TweenService:Create(notif, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
-    task.wait(2)
-    TweenService:Create(notif, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
-    task.wait(0.2)
-    notif:Destroy()
+-- ═══════════════════ [12] INPUT MODAL ═══════════════════
+local function RequestInput(titleText, placeholderText, onSubmit, onCancel)
+	local closed = false
+	local function cleanup()
+		if closed then return end
+		closed = true
+	end
+	local scrim = New("TextButton", {
+		Name                   = "InputScrim",
+		Text                   = "",
+		AutoButtonColor        = false,
+		BackgroundColor3       = C(0, 0, 0),
+		BackgroundTransparency = 1,
+		BorderSizePixel        = 0,
+		Size                   = UDim2.fromScale(1, 1),
+		ZIndex                 = 100,
+		Parent                 = PopupLayer,
+	})
+	Tween(scrim, 0.2, { BackgroundTransparency = 0.45 })
+	local card = New("CanvasGroup", {
+		Name                   = "InputCard",
+		BackgroundColor3       = COLORS.Background,
+		BorderSizePixel        = 0,
+		AnchorPoint            = Vector2.new(0.5, 0.5),
+		Position               = UDim2.fromScale(0.5, 0.46),
+		Size                   = UDim2.fromOffset(S(320), S(158)),
+		GroupTransparency      = 1,
+		ZIndex                 = 101,
+		Parent                 = PopupLayer,
+	})
+	Corner(card, S(14))
+	StrokeOf(card)
+	Tween(card, 0.22, { GroupTransparency = 0 }, Enum.EasingStyle.Quad)
+	New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(18), S(14)),
+		Size                   = UDim2.new(1, -S(36), 0, S(18)),
+		Font                   = FONT_BOLD,
+		Text                   = tostring(titleText or ""),
+		TextColor3             = COLORS.Text,
+		TextSize               = S(14),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		Parent                 = card,
+	})
+	local boxHolder = New("Frame", {
+		BackgroundColor3       = COLORS.Secondary,
+		BackgroundTransparency = 0,
+		BorderSizePixel        = 0,
+		Position               = UDim2.fromOffset(S(16), S(44)),
+		Size                   = UDim2.new(1, -S(32), 0, S(36)),
+		ZIndex                 = 102,
+		Parent                 = card,
+	})
+	Corner(boxHolder, S(8))
+	StrokeOf(boxHolder)
+	local box = New("TextBox", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(12), 0),
+		Size                   = UDim2.new(1, -S(24), 1, 0),
+		Font                   = FONT_MED,
+		Text                   = "",
+		PlaceholderText        = tostring(placeholderText or ""),
+		PlaceholderColor3      = COLORS.SubText,
+		TextColor3             = COLORS.Text,
+		TextSize               = S(13),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		ClearTextOnFocus       = false,
+		ZIndex                 = 103,
+		Parent                 = boxHolder,
+	})
+	local function closeAll()
+		cleanup()
+		Tween(scrim, 0.2, { BackgroundTransparency = 1 })
+		task.delay(0.21, function() pcall(function() scrim:Destroy() end) end)
+		Tween(card, 0.18, { GroupTransparency = 1 })
+		task.delay(0.19, function() pcall(function() card:Destroy() end) end)
+	end
+	local function confirm()
+		local txt = tostring(box.Text or "")
+		txt = string.gsub(txt, "^%s+", "")
+		txt = string.gsub(txt, "%s+$", "")
+		if #txt == 0 then return end
+		closeAll()
+		SafeCall(onSubmit, txt)
+	end
+	New("TextButton", {
+		Name = "CancelBtn", Text = "Cancel", AutoButtonColor = false,
+		BackgroundColor3 = COLORS.Secondary, BorderSizePixel = 0,
+		Font = FONT_MED, TextSize = S(12), TextColor3 = COLORS.SubText,
+		Position = UDim2.new(0, S(16), 1, -S(46)), Size = UDim2.fromOffset(S(120), S(32)),
+		ZIndex = 102, Parent = card,
+	})
+	local cancelBtn = card.CancelBtn
+	Corner(cancelBtn, S(8))
+	cancelBtn.Activated:Connect(function()
+		closeAll()
+		SafeCall(onCancel)
+	end)
+	New("TextButton", {
+		Name = "OkBtn", Text = "Confirm", AutoButtonColor = false,
+		BackgroundColor3 = COLORS.Accent, BorderSizePixel = 0,
+		Font = FONT_BOLD, TextSize = S(12), TextColor3 = C(20, 30, 40),
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -S(16), 1, -S(46)), Size = UDim2.fromOffset(S(120), S(32)),
+		ZIndex = 102, Parent = card,
+	})
+	local okBtn = card.OkBtn
+	Corner(okBtn, S(8))
+	okBtn.Activated:Connect(confirm)
+	box.FocusLost:Connect(function(enterPressed)
+		if enterPressed then confirm() end
+	end)
+	scrim.Activated:Connect(closeAll)
+	return closeAll
 end
 
--- Кнопка Exit (сворачивание)
-function SkyLine:SetupExitButton()
-    self.NavButtons[6].MouseButton1Click:Connect(function()
-        if not self.Hidden then
-            self:Hide()
-        else
-            self:Show()
-        end
-    end)
+
+-- [13] PLAYER FEATURES ------------------------------------------------
+local Features = {
+	Speed   = { On = false, Value = 16 },
+	Jump    = { On = false, Value = 50 },
+	ESP     = false,
+	Boost   = false,
+	Noclip  = false,
+	InfJump = false,
+	AntiAFK = false,
+	Spin    = { On = false, Speed = 20 },
+}
+
+local function GetChar()
+	return LocalPlayer.Character
 end
 
-function SkyLine:Hide()
-    self.Hidden = true
-    if not self.SmallArrow then
-        self.SmallArrow = Instance.new("TextButton")
-        self.SmallArrow.Size = UDim2.fromOffset(20, 40)
-        self.SmallArrow.Position = UDim2.new(0, 5, 0.5, -20)
-        self.SmallArrow.Text = "▶"
-        self.SmallArrow.TextColor3 = Color3.fromRGB(255, 255, 255)
-        self.SmallArrow.Font = Enum.Font.GothamBold
-        self.SmallArrow.BackgroundTransparency = 0.5
-        self.SmallArrow.Parent = self.MainFrame
-        self.SmallArrow.MouseButton1Click:Connect(function()
-            self:Show()
-        end)
-    end
-    self.SmallArrow.Visible = true
+local function GetHumanoid()
+	local char = LocalPlayer.Character
+	if not char then return nil end
+	return char:FindFirstChildOfClass("Humanoid")
 end
 
-function SkyLine:Show()
-    self.Hidden = false
-    if self.SmallArrow then self.SmallArrow.Visible = false end
+local function ApplySpeed()
+	pcall(function()
+		local hum = GetHumanoid()
+		if hum then
+			hum.WalkSpeed = Features.Speed.On and Features.Speed.Value or 16
+		end
+	end)
 end
 
--- Публичный API
-function SkyLine:AddMainToggle(text, default, callback)
-    return self:AddToggle(text, default, callback)
-end
-function SkyLine:AddMainSlider(text, min, max, default, callback)
-    return self:AddSlider(text, min, max, default, callback)
-end
-function SkyLine:AddMainDropdown(text, options, defaultIndex, callback)
-    return self:AddDropdown(text, options, defaultIndex, callback)
-end
-function SkyLine:AddMainButton(text, callback)
-    return self:AddButton(text, callback)
+local function ApplyJump()
+	pcall(function()
+		local hum = GetHumanoid()
+		if hum then
+			hum.UseJumpPower = true
+			hum.JumpPower = Features.Jump.On and Features.Jump.Value or 50
+		end
+	end)
 end
 
-return SkyLine
+local function SetESP(on)
+	pcall(function()
+		local char = GetChar()
+		if on then
+			if char and not char:FindFirstChild("SkyLineESP") then
+				ActiveESP = New("Highlight", {
+					Name              = "SkyLineESP",
+					FillColor         = Theme.Accent,
+					OutlineColor      = COLORS.Text,
+					FillTransparency  = 0.65,
+					OutlineTransparency = 0,
+					DepthMode         = Enum.HighlightDepthMode.AlwaysOnTop,
+					Parent            = char,
+				})
+			end
+		else
+			if ActiveESP then
+				pcall(function() ActiveESP:Destroy() end)
+				ActiveESP = nil
+			end
+			if char then
+				local old = char:FindFirstChild("SkyLineESP")
+				if old then pcall(function() old:Destroy() end) end
+			end
+		end
+	end)
+end
+
+local BoostSnap = nil
+local function SetBoost(on)
+	pcall(function()
+		if on then
+			BoostSnap = {
+				Shadows    = Lighting.GlobalShadows,
+				FogEnd     = Lighting.FogEnd,
+				Brightness = Lighting.Brightness,
+				Effects    = {},
+			}
+			Lighting.GlobalShadows = false
+			Lighting.FogEnd = 100000
+			for _, d in ipairs(Lighting:GetDescendants()) do
+				if d:IsA("PostEffect") and d.Enabled then
+					d.Enabled = false
+					Insert(BoostSnap.Effects, d)
+				end
+			end
+		else
+			if BoostSnap then
+				pcall(function()
+					Lighting.GlobalShadows = BoostSnap.Shadows
+					Lighting.FogEnd = BoostSnap.FogEnd
+					Lighting.Brightness = BoostSnap.Brightness
+					for _, d in ipairs(BoostSnap.Effects) do d.Enabled = true end
+				end)
+				BoostSnap = nil
+			end
+		end
+	end)
+end
+
+local CurrentFPS = 60
+local PingValue = 0
+local FPSFrames = 0
+local FPSTime = 0
+local PingTimer = 0
+
+Bind(RunService.RenderStepped, function(dt)
+	FPSFrames = FPSFrames + 1
+	FPSTime = FPSTime + dt
+	PingTimer = PingTimer + dt
+	if FPSTime >= 0.5 then
+		CurrentFPS = floor(FPSFrames / FPSTime + 0.5)
+		FPSFrames = 0
+		FPSTime = 0
+	end
+	if PingTimer >= 1 then
+		PingTimer = 0
+		local ok = pcall(function()
+			local item = Stats.Network.ServerStatsItem["Data Ping"]
+			if item then PingValue = math.floor(item:GetValue() + 0.5) end
+		end)
+		if not ok then
+			pcall(function() PingValue = math.floor(LocalPlayer:GetNetworkPing() * 1000) end)
+		end
+	end
+	if Features.Noclip then
+		local ok = pcall(function()
+			local char = GetChar()
+			if char then
+				for _, part in ipairs(char:GetDescendants()) do
+					if part:IsA("BasePart") then part.CanCollide = false end
+				end
+			end
+		end)
+		if not ok then Features.Noclip = false end
+	end
+	if Features.Spin.On then
+		pcall(function()
+			local char = GetChar()
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if root then
+				root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(Features.Spin.Speed * 3) * dt, 0)
+			end
+		end)
+	end
+end)
+
+Bind(UserInputService.JumpRequest, function()
+	if not Features.InfJump then return end
+	pcall(function()
+		local hum = GetHumanoid()
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+	end)
+end)
+
+Bind(LocalPlayer.Idled, function()
+	if not Features.AntiAFK then return end
+	pcall(function()
+		local VirtualUser = game:GetService("VirtualUser")
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new())
+	end)
+end)
+
+Bind(LocalPlayer.CharacterAdded, function(char)
+	task.wait(0.4)
+	if Features.Speed.On then ApplySpeed() end
+	if Features.Jump.On then ApplyJump() end
+	if Features.ESP then SetESP(true) end
+end)
+
+-- ═══════════════════ [14] FORWARD DECLARATIONS ═══════════════════
+local Library
+local SelectTab
+local ShowInterface
+local HideInterface
+local EnsurePanel
+
+local CloseAllDD = function() end
+local Hidden = true
+local BusyUI = false
+
+
+-- [15] NAV BAR (боковая панель) ---------------------------------------
+local NAV_DEFS = {
+	{ Name = "Home",       Icon = "rbxassetid://112770735347738" },
+	{ Name = "Main",       Icon = "rbxassetid://92091304135140" },
+	{ Name = "Player",     Icon = "rbxassetid://10709760631" }, -- placeholder, замените
+	{ Name = "LoadScript", Icon = "rbxassetid://83975792443912" },
+	{ Name = "Settings",   Icon = "rbxassetid://125743894366007" },
+}
+local EXIT_ICON = "rbxassetid://96518596121178"
+
+local navW    = S(64)
+local navBtnH = S(46)
+local navGap  = S(6)
+local navPad  = S(12)
+local navCount = #NAV_DEFS + 1
+local navH = navPad * 2 + navCount * navBtnH + (navCount - 1) * navGap
+
+local NavCanvas = New("CanvasGroup", {
+	Name                   = "NavCanvas",
+	BackgroundTransparency = 1,
+	BorderSizePixel        = 0,
+	Size                   = UDim2.fromScale(1, 1),
+	Parent                 = WindowLayer,
+})
+local NavScale = New("UIScale", { Scale = 1, Parent = NavCanvas })
+
+local Nav = New("Frame", {
+	Name             = "NavBar",
+	BackgroundColor3 = COLORS.Background,
+	BorderSizePixel  = 0,
+	AnchorPoint      = Vector2.new(0, 0.5),
+	Position         = UDim2.new(0, S(18), 0.5, 0),
+	Size             = UDim2.fromOffset(navW, navH),
+	Parent           = NavCanvas,
+})
+Corner(Nav, S(16))
+StrokeOf(Nav)
+
+local function BtnY(i)
+	return navPad + (i - 1) * (navBtnH + navGap)
+end
+
+local navHL = New("Frame", {
+	Name                   = "Highlight",
+	BackgroundColor3       = COLORS.Hover,
+	BackgroundTransparency = 0,
+	BorderSizePixel        = 0,
+	Position               = UDim2.new(0, S(8), 0, BtnY(1)),
+	Size                   = UDim2.new(1, -S(16), 0, navBtnH),
+	ZIndex                 = 1,
+	Parent                 = Nav,
+})
+Corner(navHL, S(12))
+
+local navButtons = {}
+local activeNav = 1
+
+local function SetIconColor(i, color)
+	local b = navButtons[i]
+	if b then
+		Tween(b.icon, 0.2, { ImageColor3 = color })
+	end
+end
+
+local function MoveNavHL(i, fast)
+	Tween(navHL, fast and 0.14 or 0.26,
+		{ Position = UDim2.new(0, S(8), 0, BtnY(i)) }, Enum.EasingStyle.Quart)
+end
+
+local function CommitNav(i)
+	activeNav = i
+	MoveNavHL(i, true)
+	for idx in ipairs(navButtons) do
+		SetIconColor(idx, idx == i and COLORS.Text or COLORS.SubText)
+	end
+end
+
+for i, def in ipairs(NAV_DEFS) do
+	local b = New("TextButton", {
+		Name                   = def.Name .. "Btn",
+		BackgroundTransparency = 1,
+		Text                   = "",
+		Position               = UDim2.new(0, 0, 0, BtnY(i)),
+		Size                   = UDim2.new(1, 0, 0, navBtnH),
+		ZIndex                 = 2,
+		Parent                 = Nav,
+	})
+	b.icon = New("ImageLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint            = Vector2.new(0.5, 0.5),
+		Position               = UDim2.fromScale(0.5, 0.5),
+		Size                   = UDim2.fromOffset(S(26), S(26)),
+		Image                  = def.Icon,
+		ImageColor3            = COLORS.SubText,
+		ZIndex                 = 3,
+		Parent                 = b,
+	})
+	Bind(b.MouseEnter, function()
+		if Hidden or BusyUI then return end
+		Tween(navHL, 0.22,
+			{ Position = UDim2.new(0, S(8), 0, BtnY(i)), BackgroundColor3 = COLORS.HoverStrong },
+			Enum.EasingStyle.Quart)
+	end)
+	Bind(b.Activated, function()
+		if BusyUI then return end
+		CommitNav(i)
+		pcall(function() SelectTab(i) end)
+	end)
+	navButtons[i] = b
+end
+
+do
+	local exitIdx = #NAV_DEFS + 1
+	local b = New("TextButton", {
+		Name                   = "ExitBtn",
+		BackgroundTransparency = 1,
+		Text                   = "",
+		Position               = UDim2.new(0, 0, 0, BtnY(exitIdx)),
+		Size                   = UDim2.new(1, 0, 0, navBtnH),
+		ZIndex                 = 2,
+		Parent                 = Nav,
+	})
+	b.icon = New("ImageLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint            = Vector2.new(0.5, 0.5),
+		Position               = UDim2.fromScale(0.5, 0.5),
+		Size                   = UDim2.fromOffset(S(26), S(26)),
+		Image                  = EXIT_ICON,
+		ImageColor3            = COLORS.SubText,
+		ZIndex                 = 3,
+		Parent                 = b,
+	})
+	Bind(b.MouseEnter, function()
+		if Hidden or BusyUI then return end
+		Tween(b.icon, 0.2, { ImageColor3 = COLORS.Danger })
+		Tween(navHL, 0.22,
+			{ Position = UDim2.new(0, S(8), 0, BtnY(exitIdx)), BackgroundColor3 = COLORS.HoverStrong },
+			Enum.EasingStyle.Quart)
+	end)
+	Bind(b.Activated, function()
+		if BusyUI then return end
+		pcall(function() HideInterface() end)
+	end)
+	navButtons[exitIdx] = b
+end
+
+Bind(Nav.MouseLeave, function()
+	if Hidden or BusyUI then return end
+	Tween(navHL, 0.25,
+		{ Position = UDim2.new(0, S(8), 0, BtnY(activeNav)), BackgroundColor3 = COLORS.Hover },
+		Enum.EasingStyle.Quart)
+end)
+
+CommitNav(1)
+
+
+-- [16] CONTENT WINDOW -------------------------------------------------
+local vp = Vector2.new(1920, 1080)
+pcall(function()
+	if Camera then vp = Camera.ViewportSize end
+end)
+
+local contentXOffset = S(18) + navW + S(14)
+local contentW = math.max(S(380), math.min(S(620), vp.X - contentXOffset - S(28)))
+local contentH = math.max(S(320), math.min(S(440), vp.Y - S(56)))
+
+local ContentCanvas = New("CanvasGroup", {
+	Name                   = "ContentCanvas",
+	BackgroundTransparency = 1,
+	BorderSizePixel        = 0,
+	Size                   = UDim2.fromScale(1, 1),
+	Parent                 = WindowLayer,
+})
+local ContentScale = New("UIScale", { Scale = 1, Parent = ContentCanvas })
+
+local Content = New("Frame", {
+	Name             = "Window",
+	BackgroundColor3 = COLORS.Background,
+	BorderSizePixel  = 0,
+	AnchorPoint      = Vector2.new(0, 0.5),
+	Position         = UDim2.new(0, contentXOffset, 0.5, 0),
+	Size             = UDim2.fromOffset(contentW, contentH),
+	Parent           = ContentCanvas,
+})
+Corner(Content, S(14))
+StrokeOf(Content)
+
+local TitleIcon = New("ImageLabel", {
+	Name                   = "TitleIcon",
+	BackgroundTransparency = 1,
+	AnchorPoint            = Vector2.new(0, 0.5),
+	Position               = UDim2.fromOffset(S(18), S(27)),
+	Size                   = UDim2.fromOffset(S(22), S(22)),
+	Image                  = NAV_DEFS[1].Icon,
+	ImageColor3            = COLORS.Accent,
+	Parent                 = Content,
+})
+local TitleName = New("TextLabel", {
+	Name                   = "TitleName",
+	BackgroundTransparency = 1,
+	Position               = UDim2.fromOffset(S(50), 0),
+	Size                   = UDim2.new(1, -S(150), 0, S(54)),
+	Font                   = FONT_BOLD,
+	Text                   = "Home",
+	TextColor3             = COLORS.Text,
+	TextSize               = S(15),
+	TextXAlignment         = Enum.TextXAlignment.Left,
+	Parent                 = Content,
+})
+New("TextLabel", {
+	BackgroundTransparency = 1,
+	AnchorPoint            = Vector2.new(1, 0.5),
+	Position               = UDim2.new(1, -S(16), 0, S(27)),
+	Size                   = UDim2.fromOffset(S(110), S(14)),
+	Font                   = FONT_MED,
+	Text                   = "SKYLINE HUB",
+	TextColor3             = COLORS.SubText,
+	TextTransparency       = 0.35,
+	TextSize               = S(10),
+	TextXAlignment         = Enum.TextXAlignment.Right,
+	Parent                 = Content,
+})
+New("Frame", {
+	BackgroundColor3       = COLORS.Stroke,
+	BackgroundTransparency = 0.55,
+	BorderSizePixel        = 0,
+	Position               = UDim2.new(0, S(14), 0, S(53)),
+	Size                   = UDim2.new(1, -S(28), 0, S(1)),
+	Parent                 = Content,
+})
+
+local TabHost = New("Frame", {
+	Name                   = "TabHost",
+	BackgroundTransparency = 1,
+	BorderSizePixel        = 0,
+	Position               = UDim2.new(0, 0, 0, S(54)),
+	Size                   = UDim2.new(1, 0, 1, -S(54)),
+	ClipsDescendants       = true,
+	Parent                 = Content,
+})
+
+-- [17] EXIT TOGGLE ARROW ----------------------------------------------
+local ARROW_HIDDEN_X = S(6)
+local ARROW_SHOWN_X  = S(18) + navW + S(12)
+
+local ArrowBtn = New("TextButton", {
+	Name             = "SkyLineToggle",
+	BackgroundColor3 = COLORS.Background,
+	BorderSizePixel  = 0,
+	AnchorPoint      = Vector2.new(0, 0.5),
+	Position         = UDim2.new(0, ARROW_HIDDEN_X, 0.5, 0),
+	Size             = UDim2.fromOffset(S(30), S(58)),
+	Text             = "",
+	AutoButtonColor  = false,
+	ZIndex           = 60,
+	Parent           = ScreenGui,
+})
+Corner(ArrowBtn, S(10))
+local ArrowStroke = StrokeOf(ArrowBtn)
+Bind(ArrowBtn.MouseEnter, function() Tween(ArrowStroke, 0.2, { Color = COLORS.Accent }) end)
+Bind(ArrowBtn.MouseLeave, function() Tween(ArrowStroke, 0.25, { Color = COLORS.Stroke }) end)
+
+local ArrowLbl = New("TextLabel", {
+	BackgroundTransparency = 1,
+	Size                   = UDim2.fromScale(1, 1),
+	Font                   = FONT_BOLD,
+	Text                   = utf8.char(187),
+	TextColor3             = COLORS.Text,
+	TextSize               = S(20),
+	Rotation               = 0,
+	ZIndex                 = 61,
+	Parent                 = ArrowBtn,
+})
+
+Bind(ArrowBtn.Activated, function()
+	if BusyUI then return end
+	if Hidden then
+		pcall(function() ShowInterface() end)
+	else
+		pcall(function() HideInterface() end)
+	end
+end)
+
+
+-- [18] TAB PAGES ------------------------------------------------------
+local Tabs = {}
+local TabByName = {}
+
+local function CreatePage(def, index)
+	local page = New("CanvasGroup", {
+		Name              = def.Name .. "Page",
+		BackgroundTransparency = 1,
+		BorderSizePixel   = 0,
+		Size              = UDim2.fromScale(1, 1),
+		Visible           = false,
+		ClipsDescendants  = true,
+		Parent            = TabHost,
+	})
+	local pageScale = New("UIScale", { Scale = 1, Parent = page })
+	local host
+	if def.Custom then
+		host = New("Frame", {
+			Name                   = "Host",
+			BackgroundTransparency = 1,
+			BorderSizePixel        = 0,
+			Size                   = UDim2.fromScale(1, 1),
+			Parent                 = page,
+		})
+	else
+		host = New("ScrollingFrame", {
+			Name                   = "Scroll",
+			BackgroundTransparency = 1,
+			BorderSizePixel        = 0,
+			Size                   = UDim2.fromScale(1, 1),
+			CanvasSize             = UDim2.new(),
+			AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+			ScrollBarThickness     = S(4),
+			ScrollBarImageColor3   = COLORS.Accent,
+			ScrollBarImageTransparency = 0.35,
+			Parent                 = page,
+		})
+		ListLayout(host, S(8))
+		Pad(host, S(14), S(12), S(14), S(14))
+	end
+	local tab = {
+		Name = def.Name, Icon = def.Icon, Order = index,
+		Page = page, PageScale = pageScale, Host = host,
+		Blocks = {}, Elements = {}, Panel = nil, LastBlock = nil,
+	}
+	Tabs[index] = tab
+	TabByName[def.Name] = tab
+	return tab
+end
+
+local PAGE_DEFS = {
+	{ Name = "Home",       Icon = NAV_DEFS[1].Icon, Custom = true },
+	{ Name = "Main",       Icon = NAV_DEFS[2].Icon },
+	{ Name = "Player",     Icon = NAV_DEFS[3].Icon },
+	{ Name = "LoadScript", Icon = NAV_DEFS[4].Icon },
+	{ Name = "Settings",   Icon = NAV_DEFS[5].Icon },
+}
+for i, def in ipairs(PAGE_DEFS) do
+	CreatePage(def, i)
+end
+
+local ActiveIdx = 1
+local Switching = false
+
+local function UpdateTitle(name, icon)
+	Tween(TitleName, 0.12, { TextTransparency = 1 })
+	Tween(TitleIcon, 0.12, { ImageTransparency = 1 })
+	task.delay(0.13, function()
+		pcall(function()
+			TitleName.Text = name
+			TitleIcon.Image = icon
+		end)
+		Tween(TitleName, 0.2, { TextTransparency = 0 })
+		Tween(TitleIcon, 0.2, { ImageTransparency = 0 })
+	end)
+end
+
+-- ═══════════════════ [19] SWITCH TAB (directional) ═══════════════════
+SelectTab = function(idx)
+	if BusyUI or Hidden or Switching then return end
+	if not Tabs[idx] or idx == ActiveIdx then return end
+	local oldT = Tabs[ActiveIdx]
+	local newT = Tabs[idx]
+	ActiveIdx = idx
+	UpdateTitle(newT.Name, newT.Icon)
+	CommitNav(idx)
+	-- новая вкладка выше в панели → старая уходит ВНИЗ, новая появляется СВЕРХУ
+	local down = idx < oldT.Order
+	local off = S(44)
+	local D = 0.34
+	oldT.Page.Visible = true
+	Tween(oldT.PageScale, D, { Scale = 0.94 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	Tween(oldT.Page, D,
+		{ Position = UDim2.fromOffset(0, down and off or -off) },
+		Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	Tween(oldT.Page, D, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	newT.Page.Visible = true
+	newT.Page.Position = UDim2.fromOffset(0, down and -off or off)
+	newT.Page.GroupTransparency = 1
+	newT.PageScale.Scale = 0.94
+	Tween(newT.Page, D, { Position = UDim2.fromOffset(0, 0) })
+	Tween(newT.Page, D, { GroupTransparency = 0 })
+	Tween(newT.PageScale, D, { Scale = 1 }, Enum.EasingStyle.Back)
+	if oldT.Panel then pcall(oldT.Panel.Hide) end
+	if newT.Panel then
+		task.delay(D * 0.5, function()
+			if ActiveIdx == idx and newT.Panel then pcall(newT.Panel.Show) end
+		end)
+	end
+	task.delay(D * 1.05, function()
+		Switching = false
+		if ActiveIdx ~= idx then return end
+		oldT.Page.Visible = false
+		oldT.Page.Position = UDim2.fromOffset(0, 0)
+		oldT.Page.GroupTransparency = 0
+		oldT.PageScale.Scale = 1
+	end)
+end
+
+
+-- [20] ELEMENT FACTORIES ----------------------------------------------
+local ROWH = S(42)
+
+local function HoverFX(row, base, hovered)
+	base = base or COLORS.Secondary
+	hovered = hovered or COLORS.Hover
+	Bind(row.MouseEnter, function()
+		Tween(row, 0.15, { BackgroundColor3 = hovered })
+	end)
+	Bind(row.MouseLeave, function()
+		Tween(row, 0.2, { BackgroundColor3 = base })
+	end)
+end
+
+local function RowLabel(row, text)
+	return New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(12), 0),
+		Size                   = UDim2.new(1, -S(96), 1, 0),
+		Font                   = FONT_MED,
+		Text                   = tostring(text or ""),
+		TextColor3             = COLORS.Text,
+		TextSize               = S(13),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		TextTruncate           = Enum.TextTruncate.AtEnd,
+		Parent                 = row,
+	})
+end
+
+local function AddLabel(host, cfg)
+	cfg = cfg or {}
+	local row = New("Frame", {
+		Name                   = "Label",
+		BackgroundTransparency = 1,
+		Size                   = UDim2.new(1, 0, 0, cfg.Height or S(24)),
+		LayoutOrder            = NextOrder(),
+		Parent                 = host,
+	})
+	New("TextLabel", {
+		BackgroundTransparency = 1,
+		Size                   = UDim2.new(1, 0, 1, 0),
+		Font                   = cfg.Bold and FONT_BOLD or FONT_MED,
+		Text                   = tostring(cfg.Text or cfg.Title or ""),
+		TextColor3             = cfg.Color or COLORS.SubText,
+		TextSize               = cfg.Size and S(cfg.Size) or S(12),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		TextWrapped            = true,
+		RichText               = false,
+		Parent                 = row,
+	})
+	return row
+end
+
+local function AddToggle(host, cfg)
+	cfg = cfg or {}
+	local st = { State = cfg.Default == true }
+	local rowH = cfg.Height or ROWH
+	local row = New("TextButton", {
+		Name             = "Toggle",
+		BackgroundColor3 = COLORS.Secondary,
+		BorderSizePixel  = 0,
+		Size             = UDim2.new(1, 0, 0, rowH),
+		Text             = "",
+		AutoButtonColor  = false,
+		LayoutOrder      = NextOrder(),
+		Parent           = host,
+	})
+	Corner(row, S(9))
+	HoverFX(row)
+	RowLabel(row, cfg.Title or "Toggle")
+	local trackW, knobD = S(46), S(18)
+	local track = New("Frame", {
+		BackgroundColor3 = COLORS.Background,
+		BorderSizePixel  = 0,
+		AnchorPoint      = Vector2.new(1, 0.5),
+		Position         = UDim2.new(1, -S(12), 0.5, 0),
+		Size             = UDim2.fromOffset(trackW, S(24)),
+		Parent           = row,
+	})
+	Corner(track, S(12))
+	local trkStroke = StrokeOf(track)
+	local knob = New("Frame", {
+		BackgroundColor3 = COLORS.Text,
+		BorderSizePixel  = 0,
+		AnchorPoint      = Vector2.new(0, 0.5),
+		Size             = UDim2.fromOffset(knobD, knobD),
+		Position         = UDim2.new(0, S(4), 0.5, 0),
+		ZIndex           = 2,
+		Parent           = track,
+	})
+	Corner(knob, S(9))
+	local ctrl = { Type = "Toggle", Row = row }
+
+	local function Render(instant)
+		local targetX = st.State and (trackW - knobD - S(4)) or S(4)
+		if instant then
+			knob.Position = UDim2.new(0, targetX, 0.5, 0)
+			track.BackgroundColor3 = st.State and Theme.Accent or COLORS.Background
+			trkStroke.Color = st.State and Theme.Accent or COLORS.Stroke
+		else
+			Tween(knob, 0.28, { Position = UDim2.new(0, targetX, 0.5, 0) }, Enum.EasingStyle.Back)
+			Tween(track, 0.28, { BackgroundColor3 = st.State and Theme.Accent or COLORS.Background })
+			Tween(trkStroke, 0.28, { Color = st.State and Theme.Accent or COLORS.Stroke })
+		end
+	end
+	Insert(ToggleRenderers, function() pcall(Render, true) end)
+
+	function ctrl.Get() return st.State end
+	function ctrl.Set(v, fire)
+		v = v == true
+		st.State = v
+		Render(false)
+		if fire ~= false then
+			SafeCall(cfg.Callback, v)
+			ScheduleAutoSave()
+		end
+	end
+	ctrl.Destroy = function()
+		pcall(function() row:Destroy() end)
+	end
+
+	Bind(row.Activated, function()
+		ctrl.Set(not st.State)
+	end)
+	RegisterFlag(cfg.Flag, ctrl)
+	Render(true)
+	return ctrl
+end
+
+
+local function AddButton(host, cfg)
+	cfg = cfg or {}
+	local danger = cfg.Danger == true
+	local row = New("TextButton", {
+		Name             = "Button",
+		BackgroundColor3 = danger and COLORS.Danger or COLORS.Secondary,
+		BorderSizePixel  = 0,
+		Size             = UDim2.new(1, 0, 0, cfg.Height or ROWH),
+		Text             = "",
+		AutoButtonColor  = false,
+		LayoutOrder      = NextOrder(),
+		Parent           = host,
+	})
+	Corner(row, S(9))
+	HoverFX(row, danger and COLORS.Danger or COLORS.Secondary, danger and COLORS.DangerHover or COLORS.Hover)
+	local label = New("TextLabel", {
+		BackgroundTransparency = 1,
+		Size                   = UDim2.new(1, 0, 1, 0),
+		Font                   = FONT_BOLD,
+		Text                   = tostring(cfg.Title or cfg.Text or "Button"),
+		TextColor3             = cfg.Color or (danger and COLORS.Text or COLORS.Accent),
+		TextSize               = S(13),
+		Parent                 = row,
+	})
+	local busy = false
+	Bind(row.Activated, function()
+		if busy then return end
+		busy = true
+		Tween(label, 0.12, { TextTransparency = 0.4 })
+		task.delay(0.14, function()
+			Tween(label, 0.2, { TextTransparency = 0 })
+			busy = false
+		end)
+		SafeCall(cfg.Callback)
+	end)
+	return { Type = "Button", Row = row }
+end
+
+
+
+-- [21] SLIDER CORE ----------------------------------------------------
+-- Возвращает компоненты полосы слайдера внутри контейнера cont.
+local function BuildSliderBar(cont, barY)
+	local barW = S(170)
+	local barH = S(10)
+
+	local label = New("TextLabel", {
+		Name                   = "SliderTitle",
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(12), S(8)),
+		Size                   = UDim2.new(1, -barW - S(44), 0, S(16)),
+		Font                   = FONT_MED,
+		Text                   = "",
+		TextColor3             = COLORS.Text,
+		TextSize               = S(13),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		TextTruncate           = Enum.TextTruncate.AtEnd,
+		Parent                 = cont,
+	})
+
+	local bar = New("Frame", {
+		Name             = "Bar",
+		BackgroundColor3 = COLORS.Background,
+		BorderSizePixel  = 0,
+		AnchorPoint      = Vector2.new(1, 0.5),
+		Position         = UDim2.new(1, -S(14), 0, barY),
+		Size             = UDim2.fromOffset(barW, barH),
+		Parent           = cont,
+	})
+	Corner(bar, S(5))
+	StrokeOf(bar)
+
+	local fill = New("Frame", {
+		Name             = "Fill",
+		BackgroundColor3 = Theme.Accent,
+		BorderSizePixel  = 0,
+		Size             = UDim2.new(0, 0, 1, 0),
+		ZIndex           = 2,
+		Parent           = bar,
+	})
+	Corner(fill, S(5))
+	local grad = New("UIGradient", { Color = ColorSequence.new(Theme.Start, Theme.Accent), Parent = fill })
+	Insert(GradientBinds, grad)
+
+	local chip = New("TextButton", {
+		Name             = "Thumb",
+		BackgroundColor3 = COLORS.Secondary,
+		BorderSizePixel  = 0,
+		AnchorPoint      = Vector2.new(0.5, 0.5),
+		Position         = UDim2.fromScale(0, 0.5),
+		Size             = UDim2.fromOffset(S(46), S(20)),
+		Text             = "",
+		AutoButtonColor  = false,
+		ZIndex           = 4,
+		Parent           = bar,
+	})
+	Corner(chip, S(10))
+	StrokeOf(chip, COLORS.Accent, 1, 0.35)
+	local chipLbl = New("TextLabel", {
+		BackgroundTransparency = 1,
+		Size                   = UDim2.fromScale(1, 1),
+		Font                   = FONT_BOLD,
+		Text                   = "",
+		TextColor3             = COLORS.Text,
+		TextSize               = S(11),
+		ZIndex                 = 5,
+		Parent                 = chip,
+	})
+
+	return { Label = label, Bar = bar, Fill = fill, Grad = grad, Chip = chip, ChipLbl = chipLbl }
+end
+
+-- Логика перетаскивания и значения слайдера.
+local function AttachSliderLogic(parts, st, onValue)
+	local fill, bar, chip, chipLbl =
+		parts.Fill, parts.Bar, parts.Chip, parts.ChipLbl
+
+	local dragging = false
+
+	local function SetValue(v, fire)
+		v = tonumber(v)
+		if not v then return end
+		if st.Inc > 0 then v = st.Min + round((v - st.Min) / st.Inc) * st.Inc end
+		v = clamp(v, st.Min, st.Max)
+		st.Value = v
+		local range = st.Max - st.Min
+		local frac = range > 0 and (v - st.Min) / range or 0
+		fill.Size = UDim2.new(frac, 0, 1, 0)
+		chip.Position = UDim2.new(frac, 0, 0.5, 0)
+		chipLbl.Text = tostring(v) .. (st.Suffix ~= "" and (" " .. st.Suffix) or "")
+		if fire then SafeCall(onValue, v) end
+	end
+
+	local function UpdateFromX(xAbs)
+		local bw = bar.AbsoluteSize.X
+		if bw <= 0 then return end
+		local frac = clamp((xAbs - bar.AbsolutePosition.X) / bw, 0, 1)
+		SetValue(st.Min + frac * (st.Max - st.Min), true)
+	end
+
+	local function BeginDrag()
+		dragging = true
+		UpdateFromX(UserInputService:GetMouseLocation().X)
+	end
+
+	Bind(bar.InputBegan, function(io)
+		local t = io.UserInputType
+		if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then
+			BeginDrag()
+		end
+	end)
+	Bind(chip.InputBegan, function(io)
+		local t = io.UserInputType
+		if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then
+			BeginDrag()
+		end
+	end)
+	Bind(UserInputService.InputChanged, function(io)
+		if not dragging then return end
+		local t = io.UserInputType
+		if t == Enum.UserInputType.MouseMovement or t == Enum.UserInputType.Touch then
+			UpdateFromX(UserInputService:GetMouseLocation().X)
+		end
+	end)
+	Bind(UserInputService.InputEnded, function(io)
+		local t = io.UserInputType
+		if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+
+	return SetValue
+end
+
+
+-- [22] SLIDER FACTORY -------------------------------------------------
+local function AddSliderPlain(host, cfg)
+	cfg = cfg or {}
+	local st = {
+		Min    = tonumber(cfg.Min) or 0,
+		Max    = tonumber(cfg.Max) or 100,
+		Value  = tonumber(cfg.Default) or tonumber(cfg.Min) or 0,
+		Suffix = cfg.Suffix and tostring(cfg.Suffix) or "",
+		Title  = tostring(cfg.Title or "Slider"),
+	}
+	st.Inc = tonumber(cfg.Increment)
+	if not st.Inc or st.Inc <= 0 then st.Inc = 1 end
+	if st.Value < st.Min then st.Value = st.Min end
+	if st.Value > st.Max then st.Value = st.Max end
+
+	local cont = New("Frame", {
+		Name             = "Slider",
+		BackgroundColor3 = COLORS.Secondary,
+		BorderSizePixel  = 0,
+		Size             = UDim2.new(1, 0, 0, S(56)),
+		LayoutOrder      = NextOrder(),
+		Parent           = host,
+	})
+	Corner(cont, S(9))
+	local parts = BuildSliderBar(cont, math.floor(S(56) / 2))
+	parts.Label.Text = st.Title
+	parts.Label.Position = UDim2.fromOffset(S(12), 0)
+	parts.Label.Size = UDim2.new(1, -(S(170) + S(44)), 1, 0)
+
+	local SetValue = AttachSliderLogic(parts, st, cfg.Callback)
+	SetValue(st.Value, false)
+
+	local ctrl = { Type = "Slider", Row = cont }
+	function ctrl.Get() return st.Value end
+	function ctrl.Set(v, fire) SetValue(v, fire ~= false) end
+	ctrl.Destroy = function() pcall(function() cont:Destroy() end) end
+	RegisterFlag(cfg.Flag, ctrl)
+	return ctrl
+end
+
+local function AddMiniToggle(cont, cfg)
+	local state = cfg.Default == true
+	local row = New("TextButton", {
+		Name                   = "MiniToggle",
+		BackgroundTransparency = 1,
+		Text                   = "",
+		AutoButtonColor        = false,
+		Size                   = UDim2.new(1, 0, 0, S(34)),
+		Position               = UDim2.new(0, 0, 0, S(58)),
+		Parent                 = cont,
+	})
+	New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(12), 0),
+		Size                   = UDim2.new(1, -S(90), 1, 0),
+		Font                   = FONT_MED,
+		Text                   = tostring(cfg.Title or "Enable"),
+		TextColor3             = COLORS.SubText,
+		TextSize               = S(12),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		Parent                 = row,
+	})
+	local trackW, knobD = S(40), S(14)
+	local track = New("Frame", {
+		BackgroundColor3 = COLORS.Background,
+		BorderSizePixel  = 0,
+		AnchorPoint      = Vector2.new(1, 0.5),
+		Position         = UDim2.new(1, -S(12), 0.5, 0),
+		Size             = UDim2.fromOffset(trackW, S(20)),
+		Parent           = row,
+	})
+	Corner(track, S(10))
+	local trkStroke = StrokeOf(track)
+	local knob = New("Frame", {
+		BackgroundColor3 = COLORS.Text,
+		BorderSizePixel  = 0,
+		AnchorPoint      = Vector2.new(0, 0.5),
+		Size             = UDim2.fromOffset(knobD, knobD),
+		Position         = UDim2.new(0, S(3), 0.5, 0),
+		ZIndex           = 2,
+		Parent           = track,
+	})
+	Corner(knob, S(7))
+	local ctrl = { Type = "Toggle", Row = row }
+	local function Render(instant)
+		local tx = state and (trackW - knobD - S(3)) or S(3)
+		if instant then
+			knob.Position = UDim2.new(0, tx, 0.5, 0)
+			track.BackgroundColor3 = state and Theme.Accent or COLORS.Background
+			trkStroke.Color = state and Theme.Accent or COLORS.Stroke
+		else
+			Tween(knob, 0.26, { Position = UDim2.new(0, tx, 0.5, 0) }, Enum.EasingStyle.Back)
+			Tween(track, 0.26, { BackgroundColor3 = state and Theme.Accent or COLORS.Background })
+			Tween(trkStroke, 0.26, { Color = state and Theme.Accent or COLORS.Stroke })
+		end
+	end
+	Insert(ToggleRenderers, function() pcall(Render, true) end)
+	function ctrl.Get() return state end
+	function ctrl.Set(v, fire)
+		v = v == true
+		state = v
+		Render(false)
+		if fire ~= false then
+			SafeCall(cfg.Callback, v)
+			ScheduleAutoSave()
+		end
+	end
+	Bind(row.Activated, function() ctrl.Set(not state) end)
+	Render(true)
+	return ctrl
+end
+
+local function AddSliderIntegrated(host, cfg)
+	local st = {
+		Min    = tonumber(cfg.Min) or 0,
+		Max    = tonumber(cfg.Max) or 100,
+		Value  = tonumber(cfg.Default) or tonumber(cfg.Min) or 0,
+		Suffix = cfg.Suffix and tostring(cfg.Suffix) or "",
+		Title  = tostring(cfg.Title or "Slider"),
+	}
+	st.Inc = tonumber(cfg.Increment)
+	if not st.Inc or st.Inc <= 0 then st.Inc = 1 end
+	st.Value = clamp(st.Value, st.Min, st.Max)
+
+	local cont = New("Frame", {
+		Name             = "SliderCombo",
+		BackgroundColor3 = COLORS.Secondary,
+		BorderSizePixel  = 0,
+		Size             = UDim2.new(1, 0, 0, S(98)),
+		LayoutOrder      = NextOrder(),
+		Parent           = host,
+	})
+	Corner(cont, S(9))
+	local parts = BuildSliderBar(cont, S(32))
+	parts.Label.Text = st.Title
+	New("Frame", {
+		BackgroundColor3       = COLORS.Stroke,
+		BackgroundTransparency = 0.55,
+		BorderSizePixel        = 0,
+		Position               = UDim2.new(0, S(12), 0, S(52)),
+		Size                   = UDim2.new(1, -S(24), 0, S(1)),
+		Parent                 = cont,
+	})
+	local mini = AddMiniToggle(cont, {
+		Title    = cfg.ToggleTitle or "Enable",
+		Default  = cfg.ToggleDefault == true,
+		Callback = cfg.OnToggle,
+	})
+	local SetValue = AttachSliderLogic(parts, st, cfg.Callback)
+	SetValue(st.Value, false)
+
+	local ctrl = { Type = "Slider", Row = cont }
+	function ctrl.Get() return st.Value end
+	function ctrl.Set(v, fire) SetValue(v, fire ~= false) end
+	function ctrl.GetEnabled() return mini.Get() end
+	function ctrl.SetEnabled(v, fire) mini.Set(v, fire) end
+	ctrl.Destroy = function() pcall(function() cont:Destroy() end) end
+	RegisterFlag(cfg.Flag, ctrl)
+	RegisterFlag(cfg.ToggleFlag or (cfg.Flag and cfg.Flag .. "_Enabled"), mini)
+	return ctrl
+end
+
+local function AddSlider(host, cfg)
+	cfg = cfg or {}
+	if cfg.WithToggle then
+		return AddSliderIntegrated(host, cfg)
+	end
+	return AddSliderPlain(host, cfg)
+end
+
+
+-- [23] DROPDOWN -------------------------------------------------------
+local OpenDDRef = nil
+
+-- закрытие по клику вне дропдауна
+Bind(UserInputService.InputBegan, function(input)
+	if not OpenDDRef then return end
+	local t = input.UserInputType
+	if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then return end
+	local dd = OpenDDRef
+	local m = UserInputService:GetMouseLocation()
+	local box = dd.Box
+	local bp = box.AbsolutePosition
+	local bs = box.AbsoluteSize
+	local inBox = m.X >= bp.X and m.X <= bp.X + bs.X and m.Y >= bp.Y - S(40) and m.Y <= bp.Y + bs.Y + S(6)
+	local inPop = false
+	if dd.Handle then
+		local pp = dd.Handle.Popup.AbsolutePosition
+		local ps = dd.Handle.Popup.AbsoluteSize
+		inPop = m.X >= pp.X and m.X <= pp.X + ps.X and m.Y >= pp.Y and m.Y <= pp.Y + ps.Y
+	end
+	if not inBox and not inPop then
+		pcall(dd.Close)
+	end
+end)
+
+local function BuildDropdownPopup(box, opts, isSelFn, onSelect)
+	opts = opts or {}
+	local absPos = box.AbsolutePosition
+	local listH = math.max(S(42), math.min(#opts * S(30) + S(12), S(172)))
+	local popup = New("CanvasGroup", {
+		Name                   = "DropdownPopup",
+		BackgroundColor3       = COLORS.Secondary,
+		BorderSizePixel        = 0,
+		Position               = UDim2.fromOffset(absPos.X, absPos.Y + box.AbsoluteSize.Y + S(6)),
+		Size                   = UDim2.fromOffset(math.max(box.AbsoluteSize.X, S(110)), listH),
+		GroupTransparency      = 1,
+		ZIndex                 = 120,
+		Parent                 = PopupLayer,
+	})
+	Corner(popup, S(10))
+	StrokeOf(popup)
+	local popScale = New("UIScale", { Scale = 0.95, Parent = popup })
+	Tween(popup, 0.18, { GroupTransparency = 0 })
+	Tween(popScale, 0.2, { Scale = 1 }, Enum.EasingStyle.Back)
+
+	local scroll = New("ScrollingFrame", {
+		Name                       = "List",
+		BackgroundTransparency     = 1,
+		BorderSizePixel            = 0,
+		Position                   = UDim2.fromOffset(S(4), S(4)),
+		Size                       = UDim2.new(1, -S(8), 1, -S(8)),
+		CanvasSize                 = UDim2.new(),
+		AutomaticCanvasSize        = Enum.AutomaticSize.Y,
+		ScrollBarThickness         = S(3),
+		ScrollBarImageColor3       = COLORS.Accent,
+		ScrollBarImageTransparency = 0.3,
+		Parent                     = popup,
+	})
+	ListLayout(scroll, S(4))
+
+	local items = {}
+	for i, opt in ipairs(opts) do
+		local it = New("TextButton", {
+			Name                   = "Option",
+			BackgroundColor3       = COLORS.Hover,
+			BackgroundTransparency = 1,
+			Size                   = UDim2.new(1, 0, 0, S(28)),
+			Text                   = "",
+			AutoButtonColor        = false,
+			LayoutOrder            = i,
+			ZIndex                 = 122,
+			Parent                 = scroll,
+		})
+		Corner(it, S(7))
+		local lbl = New("TextLabel", {
+			BackgroundTransparency = 1,
+			Position               = UDim2.fromOffset(S(10), 0),
+			Size                   = UDim2.new(1, -S(20), 1, 0),
+			Font                   = FONT_MED,
+			Text                   = tostring(opt),
+			TextColor3             = isSelFn(opt) and Theme.Accent or COLORS.Text,
+			TextSize               = S(12),
+			TextXAlignment         = Enum.TextXAlignment.Left,
+			TextTruncate           = Enum.TextTruncate.AtEnd,
+			ZIndex                 = 123,
+			Parent                 = it,
+		})
+		Bind(it.MouseEnter, function()
+			Tween(it, 0.12, { BackgroundTransparency = 0 })
+		end)
+		Bind(it.MouseLeave, function()
+			Tween(it, 0.16, { BackgroundTransparency = 1 })
+		end)
+		Bind(it.Activated, function()
+			SafeCall(onSelect, opt, it)
+		end)
+		items[i] = { Btn = it, Lbl = lbl }
+	end
+
+	return { Popup = popup, Items = items }
+end
+
+local function RestyleItems(handle, sel)
+	if not handle then return end
+	for _, item in ipairs(handle.Items) do
+		local isSel = tostring(item.Lbl.Text) == tostring(sel)
+		item.Lbl.TextColor3 = isSel and Theme.Accent or COLORS.Text
+	end
+end
+
+
+local DDRegistry = {}
+
+local function AddDropdown(host, cfg)
+	cfg = cfg or {}
+	local opts = {}
+	if type(cfg.Options) == "table" then
+		for _, o in ipairs(cfg.Options) do
+			opts[#opts + 1] = tostring(o)
+		end
+	end
+	local sel = cfg.Default and tostring(cfg.Default) or nil
+	local hasDefault = false
+	for _, o in ipairs(opts) do
+		if o == sel then hasDefault = true break end
+	end
+	if not hasDefault then sel = opts[1] end
+
+	local row = New("TextButton", {
+		Name             = "Dropdown",
+		BackgroundColor3 = COLORS.Secondary,
+		BorderSizePixel  = 0,
+		Size             = UDim2.new(1, 0, 0, ROWH),
+		Text             = "",
+		AutoButtonColor  = false,
+		LayoutOrder      = NextOrder(),
+		Parent           = host,
+	})
+	Corner(row, S(9))
+	HoverFX(row)
+	RowLabel(row, cfg.Title or "Dropdown")
+
+	local boxW = S(96)
+	for _, o in ipairs(opts) do
+		boxW = math.max(boxW, Measure(o, S(12), FONT_MED) + S(36))
+	end
+	boxW = clamp(boxW, S(96), S(240))
+
+	local box = New("Frame", {
+		Name             = "Box",
+		BackgroundColor3 = COLORS.Background,
+		BorderSizePixel  = 0,
+		AnchorPoint      = Vector2.new(1, 0.5),
+		Position         = UDim2.new(1, -S(12), 0.5, 0),
+		Size             = UDim2.fromOffset(boxW, S(30)),
+		Parent           = row,
+	})
+	Corner(box, S(8))
+	local ddStroke = StrokeOf(box)
+
+	local selLbl = New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(10), 0),
+		Size                   = UDim2.new(1, -S(42), 1, 0),
+		Font                   = FONT_MED,
+		Text                   = sel or "...",
+		TextColor3             = COLORS.Text,
+		TextSize               = S(12),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		TextTruncate           = Enum.TextTruncate.AtEnd,
+		Parent                 = box,
+	})
+	local chev = New("TextLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint            = Vector2.new(1, 0.5),
+		Position               = UDim2.new(1, -S(10), 0.5, 0),
+		Size                   = UDim2.fromOffset(S(14), S(14)),
+		Font                   = FONT_ICON,
+		Text                   = utf8.char(9660),
+		TextColor3             = COLORS.SubText,
+		TextSize               = S(8),
+		Rotation               = 0,
+		Parent                 = box,
+	})
+
+	local dd = { Box = box, Handle = nil, open = false }
+
+	function dd.Close()
+		if not dd.open then return end
+		dd.open = false
+		if OpenDDRef == dd then OpenDDRef = nil end
+		Tween(chev, 0.25, { Rotation = 0 }, Enum.EasingStyle.Quart)
+		Tween(ddStroke, 0.25, { Color = COLORS.Stroke })
+		if dd.Handle then
+			local h = dd.Handle
+			dd.Handle = nil
+			Tween(h.Popup, 0.15, { GroupTransparency = 1 })
+			task.delay(0.16, function() pcall(function() h.Popup:Destroy() end) end)
+		end
+	end
+
+	local function Select(opt, silent)
+		sel = tostring(opt)
+		selLbl.Text = sel
+		RestyleItems(dd.Handle, sel)
+		pcall(function() dd.Close() end)
+		if not silent then
+			SafeCall(cfg.Callback, sel)
+			ScheduleAutoSave()
+		end
+	end
+	dd.Select = Select
+
+	function dd.Open()
+		if dd.open then pcall(dd.Close) return end
+		pcall(CloseAllDD)
+		if cfg.RefreshOptions then
+			local okR, newList = pcall(cfg.RefreshOptions)
+			if okR and type(newList) == "table" then
+				opts = {}
+				for _, x in ipairs(newList) do opts[#opts + 1] = tostring(x) end
+				local hasSel = false
+				for _, o in ipairs(opts) do if o == sel then hasSel = true break end end
+				if not hasSel then
+					sel = opts[1]
+					selLbl.Text = sel or "..."
+				end
+			end
+		end
+		if #opts == 0 then return end
+		dd.open = true
+		OpenDDRef = dd
+		dd.Handle = BuildDropdownPopup(box, opts,
+			function(o) return o == sel end,
+			function(o) Select(o) end)
+		Tween(chev, 0.25, { Rotation = 180 }, Enum.EasingStyle.Quart)
+		Tween(ddStroke, 0.25, { Color = Theme.Accent })
+	end
+
+	Bind(row.Activated, function()
+		if dd.open then dd.Close() else dd.Open() end
+	end)
+
+	local regEntry = { Close = dd.Close }
+	Insert(DDRegistry, regEntry)
+
+	CloseAllDD = function()
+		for _, e in ipairs(DDRegistry) do pcall(e.Close) end
+	end
+
+	local ctrl = { Type = "Dropdown", Row = row }
+	function ctrl.Get() return sel end
+	function ctrl.Set(v, fire)
+		local target = tostring(v)
+		for _, o in ipairs(opts) do
+			if o == target then
+				Select(o, fire == false)
+				return
+			end
+		end
+	end
+	function ctrl.Refresh(list)
+		if type(list) ~= "table" then return end
+		opts = {}
+		for _, x in ipairs(list) do opts[#opts + 1] = tostring(x) end
+	end
+	ctrl.Destroy = function()
+		pcall(function() dd.Close() end)
+		for i = #DDRegistry, 1, -1 do
+			if DDRegistry[i] == regEntry then table.remove(DDRegistry, i) break end
+		end
+		pcall(function() row:Destroy() end)
+	end
+	RegisterFlag(cfg.Flag, ctrl)
+	return ctrl
+end
+
+
+-- [24] SCRIPT BUTTON (стрелка вправо, не раскрывается) ----------------
+local function AddScriptRow(host, cfg)
+	cfg = cfg or {}
+	local row = New("TextButton", {
+		Name             = "ScriptBtn",
+		BackgroundColor3 = COLORS.Secondary,
+		BorderSizePixel  = 0,
+		Size             = UDim2.new(1, 0, 0, cfg.Height or ROWH),
+		Text             = "",
+		AutoButtonColor  = false,
+		LayoutOrder      = NextOrder(),
+		Parent           = host,
+	})
+	Corner(row, S(9))
+	HoverFX(row)
+	RowLabel(row, cfg.Title or cfg.Name or "Script")
+	local chev = New("TextLabel", {
+		Name                   = "Chevron",
+		BackgroundTransparency = 1,
+		AnchorPoint            = Vector2.new(1, 0.5),
+		Position               = UDim2.new(1, -S(14), 0.5, 0),
+		Size                   = UDim2.fromOffset(S(14), S(14)),
+		Font                   = FONT_ICON,
+		Text                   = utf8.char(8250),
+		TextColor3             = COLORS.Accent,
+		TextSize               = S(15),
+		Rotation               = 90,
+		Parent                 = row,
+	})
+	local busy = false
+	Bind(row.Activated, function()
+		if busy then return end
+		busy = true
+		Tween(chev, 0.14, { Position = UDim2.new(1, -S(9), 0.5, 0) })
+		task.delay(0.18, function()
+			Tween(chev, 0.2, { Position = UDim2.new(1, -S(14), 0.5, 0) })
+			busy = false
+		end)
+		Notify("Loader", "Запуск: " .. tostring(cfg.Title or cfg.Name or "script"))
+		Spawn(function()
+			SafeCall(cfg.Callback)
+		end)
+	end)
+	return { Type = "Script", Row = row }
+end
+
+-- [25] BLOCK (сворачиваемая секция) -----------------------------------
+local function CreateBlock(tab, name)
+	name = tostring(name or "Block")
+	local headerH = ROWH
+
+	local root = New("Frame", {
+		Name                   = "Block",
+		BackgroundTransparency = 1,
+		Size                   = UDim2.new(1, 0, 0, headerH),
+		LayoutOrder            = NextOrder(),
+		Parent                 = tab.Host,
+	})
+	local header = New("TextButton", {
+		Name             = "Header",
+		BackgroundColor3 = COLORS.Secondary,
+		BorderSizePixel  = 0,
+		Size             = UDim2.new(1, 0, 0, headerH),
+		Text             = "",
+		AutoButtonColor  = false,
+		ZIndex           = 2,
+		Parent           = root,
+	})
+	Corner(header, S(9))
+	HoverFX(header)
+	RowLabel(header, name)
+	local chev = New("TextLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint            = Vector2.new(1, 0.5),
+		Position               = UDim2.new(1, -S(12), 0.5, 0),
+		Size                   = UDim2.fromOffset(S(14), S(14)),
+		Font                   = FONT_ICON,
+		Text                   = utf8.char(9660),
+		TextColor3             = COLORS.SubText,
+		TextSize               = S(8),
+		Rotation               = 0,
+		ZIndex                 = 3,
+		Parent                 = header,
+	})
+	local body = New("Frame", {
+		Name             = "Body",
+		BackgroundColor3 = COLORS.Background,
+		BorderSizePixel  = 0,
+		Position         = UDim2.new(0, 0, 0, headerH + S(6)),
+		Size             = UDim2.new(1, 0, 0, 0),
+		Visible          = false,
+		ClipsDescendants = true,
+		Parent           = root,
+	})
+	Corner(body, S(9))
+	ListLayout(body, S(8))
+	Pad(body, S(10), S(10), S(10), S(12))
+
+	local block = { Name = name, Open = false, Heights = {} }
+
+	local function ContentH()
+		local sum = S(22)
+		for i, h in ipairs(block.Heights) do
+			sum = sum + h + (i > 1 and S(8) or 0)
+		end
+		return sum
+	end
+
+	function block.Apply(open)
+		open = open == true
+		block.Open = open
+		Tween(chev, 0.3, { Rotation = open and 180 or 0 }, Enum.EasingStyle.Quart)
+		if open then
+			body.Visible = true
+			Tween(root, 0.32, { Size = UDim2.new(1, 0, 0, headerH + S(6) + ContentH()) })
+		else
+			Tween(root, 0.26, { Size = UDim2.new(1, 0, 0, headerH) },
+				Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			task.delay(0.27, function()
+				if not block.Open then body.Visible = false end
+			end)
+		end
+		if tab.Panel then pcall(tab.Panel.Sync) end
+	end
+
+	function block.Toggle(o)
+		block.Apply(o == nil and (not block.Open) or o)
+	end
+
+	local function Wrap(factory, heightOf)
+		return function(cfg)
+			cfg = cfg or {}
+			local ctrl = factory(body, cfg)
+			Insert(block.Heights, heightOf(cfg))
+			if block.Open then
+				pcall(function()
+					root.Size = UDim2.new(1, 0, 0, headerH + S(6) + ContentH())
+				end)
+			end
+			return ctrl
+		end
+	end
+
+	block.AddToggle   = Wrap(AddToggle,   function(c) return c.Height or ROWH end)
+	block.AddButton   = Wrap(AddButton,   function(c) return c.Height or ROWH end)
+	block.AddDropdown = Wrap(AddDropdown, function(c) return ROWH end)
+	block.AddSlider   = Wrap(AddSlider,   function(c) return c.WithToggle and S(98) or S(56) end)
+	block.AddLabel    = Wrap(AddLabel,    function(c) return c.Height or S(24) end)
+	block.Set = block.Apply
+	block.Get = function() return block.Open end
+
+	Bind(header.Activated, function()
+		block.Toggle()
+	end)
+
+	Insert(tab.Blocks, block)
+	if EnsurePanel then EnsurePanel(tab) end
+	return block
+end
+
+
+-- [26] RIGHT BLOCK NAV PANEL ------------------------------------------
+EnsurePanel = function(tab)
+	if not tab then return end
+	if #tab.Blocks < 2 then return end
+	if tab.Panel and tab.Panel.Canvas and tab.Panel.Canvas.Parent then
+		return
+	end
+
+	local blocks = tab.Blocks
+	local n = #blocks
+
+	local itemW = S(130)
+	for _, b in ipairs(blocks) do
+		itemW = math.max(itemW, Measure(b.Name, S(12), FONT_MED) + S(44))
+	end
+	itemW = clamp(itemW, S(130), S(230))
+
+	local itemH = S(38)
+	local gap   = S(5)
+	local padV  = S(10)
+	local panelH = n * itemH + (n - 1) * gap + padV * 2
+
+	local vph = Vector2.new(1920, 1080)
+	pcall(function()
+		if Camera then vph = Camera.ViewportSize end
+	end)
+	local winTopY = math.floor((vph.Y - contentH) / 2)
+	local panelX = contentXOffset + contentW + S(12)
+
+	local canvas = New("CanvasGroup", {
+		Name                   = "BlockNav",
+		BackgroundTransparency = 1,
+		BorderSizePixel        = 0,
+		Size                   = UDim2.fromScale(1, 1),
+		GroupTransparency      = 1,
+		ZIndex                 = 40,
+		Parent                 = WindowLayer,
+	})
+
+	local panel = New("Frame", {
+		Name             = "BlockPanel",
+		BackgroundColor3 = COLORS.Background,
+		BorderSizePixel  = 0,
+		Position         = UDim2.fromOffset(panelX, winTopY),
+		Size             = UDim2.fromOffset(itemW, panelH),
+		Parent           = canvas,
+	})
+	Corner(panel, S(14))
+	StrokeOf(panel)
+
+	local hl = New("Frame", {
+		Name                   = "HL",
+		BackgroundColor3       = COLORS.Secondary,
+		BackgroundTransparency = 0,
+		BorderSizePixel        = 0,
+		Position               = UDim2.fromOffset(S(8), padV),
+		Size                   = UDim2.new(1, -S(16), 0, itemH),
+		ZIndex                 = 1,
+		Parent                 = panel,
+	})
+	Corner(hl, S(10))
+
+	local committed = 1
+	local function MoveHL(i, fast)
+		Tween(hl, fast and 0.14 or 0.24,
+			{ Position = UDim2.fromOffset(S(8), padV + (i - 1) * (itemH + gap)) },
+			Enum.EasingStyle.Quart)
+	end
+
+	local items = {}
+	for i, b in ipairs(blocks) do
+		local it = New("TextButton", {
+			Name                   = "NavItem",
+			BackgroundTransparency = 1,
+			Text                   = "",
+			AutoButtonColor        = false,
+			Position               = UDim2.fromOffset(S(8), padV + (i - 1) * (itemH + gap)),
+			Size                   = UDim2.new(1, -S(16), 0, itemH),
+			ZIndex                 = 2,
+			Parent                 = panel,
+		})
+		it.dot = New("Frame", {
+			Name                   = "Dot",
+			BackgroundColor3       = Theme.Accent,
+			BackgroundTransparency = 0,
+			BorderSizePixel        = 0,
+			AnchorPoint            = Vector2.new(0, 0.5),
+			Position               = UDim2.fromOffset(S(9), 0.5),
+			Size                   = UDim2.fromOffset(S(6), S(6)),
+			Visible                = false,
+			ZIndex                 = 3,
+			Parent                 = it,
+		})
+		it.lbl = New("TextLabel", {
+			BackgroundTransparency = 1,
+			Position               = UDim2.fromOffset(S(22), 0),
+			Size                   = UDim2.new(1, -S(30), 1, 0),
+			Font                   = FONT_MED,
+			Text                   = b.Name,
+			TextColor3             = COLORS.SubText,
+			TextSize               = S(12),
+			TextXAlignment         = Enum.TextXAlignment.Left,
+			TextTruncate           = Enum.TextTruncate.AtEnd,
+			ZIndex                 = 3,
+			Parent                 = it,
+		})
+		Bind(it.MouseEnter, function()
+			if Hidden or BusyUI then return end
+			Tween(hl, 0.2,
+				{ Position = UDim2.fromOffset(S(8), padV + (i - 1) * (itemH + gap)), BackgroundColor3 = COLORS.HoverStrong },
+				Enum.EasingStyle.Quart)
+		end)
+		Bind(it.Activated, function()
+			if Hidden or BusyUI then return end
+			b.Toggle()
+			committed = i
+			MoveHL(i, true)
+		end)
+		items[i] = it
+	end
+
+	Bind(panel.MouseLeave, function()
+		if Hidden or BusyUI then return end
+		MoveHL(committed, false)
+		Tween(hl, 0.25, { BackgroundColor3 = COLORS.Secondary })
+	end)
+
+	local function Sync()
+		local lastOpen = nil
+		for i, b in ipairs(blocks) do
+			local isOpen = b.Open == true
+			items[i].dot.Visible = isOpen
+			items[i].lbl.TextColor3 = isOpen and COLORS.Text or COLORS.SubText
+			if isOpen then lastOpen = i end
+		end
+		if lastOpen then
+			tab.LastBlock = lastOpen
+			committed = lastOpen
+		elseif not tab.LastBlock or not blocks[tab.LastBlock] then
+			committed = 1
+		else
+			committed = tab.LastBlock
+		end
+		MoveHL(committed, true)
+		Tween(hl, 0.25, { BackgroundColor3 = COLORS.Secondary })
+	end
+
+	tab.Panel = {
+		Canvas = canvas,
+		Sync   = Sync,
+		Show   = function() Tween(canvas, 0.3, { GroupTransparency = 0 }) end,
+		Hide   = function() Tween(canvas, 0.25, { GroupTransparency = 1 }) end,
+	}
+	Sync()
+
+	if ActiveIdx == tab.Order and not Hidden then
+		task.delay(0.35, function() pcall(function() tab.Panel.Show() end) end)
+	end
+end
+
+
+-- [27] TAB API --------------------------------------------------------
+local TabAPI = {}
+TabAPI.__index = TabAPI
+
+function TabAPI:AddToggle(cfg)   return AddToggle(self.Host, cfg) end
+function TabAPI:AddButton(cfg)   return AddButton(self.Host, cfg) end
+function TabAPI:AddLabel(cfg)    return AddLabel(self.Host, cfg) end
+function TabAPI:AddSlider(cfg)   return AddSlider(self.Host, cfg) end
+function TabAPI:AddDropdown(cfg) return AddDropdown(self.Host, cfg) end
+function TabAPI:AddBlock(name)   return CreateBlock(self, name) end
+function TabAPI:AddScriptRow(cfg) return AddScriptRow(self.Host, cfg) end
+
+for _, t in ipairs(Tabs) do
+	setmetatable(t, TabAPI)
+end
+
+-- [28] HOME TAB -------------------------------------------------------
+do
+	local home = Tabs[1]
+	local host = home.Host
+
+	local uid = tostring(LocalPlayer.UserId)
+
+	New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(20), S(12)),
+		Size                   = UDim2.new(1, -S(40), 0, S(20)),
+		Font                   = FONT_BOLD,
+		Text                   = "Welcome back",
+		TextColor3             = COLORS.Text,
+		TextSize               = S(16),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		Parent                 = host,
+	})
+	New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(20), S(34)),
+		Size                   = UDim2.new(1, -S(40), 0, S(14)),
+		Font                   = FONT,
+		Text                   = "@" .. LocalPlayer.Name .. "  •  SkyLine Hub v1.0",
+		TextColor3             = COLORS.SubText,
+		TextSize               = S(11),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		Parent                 = host,
+	})
+
+	local card = New("Frame", {
+		Name             = "ProfileCard",
+		BackgroundColor3 = COLORS.Secondary,
+		BorderSizePixel  = 0,
+		Position         = UDim2.fromOffset(S(20), S(60)),
+		Size             = UDim2.new(1, -S(40), 0, S(122)),
+		Parent           = host,
+	})
+	Corner(card, S(14))
+	StrokeOf(card)
+
+	local avatarHolder = New("Frame", {
+		Name             = "AvatarHolder",
+		BackgroundColor3 = COLORS.Background,
+		BorderSizePixel  = 0,
+		AnchorPoint      = Vector2.new(0, 0.5),
+		Position         = UDim2.new(0, S(16), 0.5, 0),
+		Size             = UDim2.fromOffset(S(78), S(78)),
+		Parent           = card,
+	})
+	Corner(avatarHolder, S(39))
+	StrokeOf(avatarHolder, COLORS.Accent, S(1.5), 0.4)
+
+	local initials = New("TextLabel", {
+		BackgroundTransparency = 1,
+		Size                   = UDim2.fromScale(1, 1),
+		Font                   = FONT_BOLD,
+		Text                   = string.sub(LocalPlayer.Name, 1, 2),
+		TextColor3             = COLORS.SubText,
+		TextSize               = S(18),
+		Parent                 = avatarHolder,
+	})
+
+	local AvatarImg = New("ImageLabel", {
+		Name                   = "Avatar",
+		BackgroundTransparency = 1,
+		AnchorPoint            = Vector2.new(0.5, 0.5),
+		Position               = UDim2.fromScale(0.5, 0.5),
+		Size                   = UDim2.fromOffset(S(70), S(70)),
+		Image                  = "",
+		Parent                 = avatarHolder,
+	})
+	Corner(AvatarImg, S(35))
+	Spawn(function()
+		pcall(function()
+			local content = Players:GetUserThumbnailAsync(
+				LocalPlayer.UserId,
+				Enum.ThumbnailType.HeadShot,
+				Enum.ThumbnailSize.Size420x420)
+			if content and AvatarImg.Parent then
+				AvatarImg.Image = content
+				initials.Text = ""
+			end
+		end)
+	end)
+
+	New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(108), S(10)),
+		Size                   = UDim2.new(1, -S(124), 0, S(16)),
+		Font                   = FONT_BOLD,
+		Text                   = LocalPlayer.DisplayName,
+		TextColor3             = COLORS.Text,
+		TextSize               = S(14),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		TextTruncate           = Enum.TextTruncate.AtEnd,
+		Parent                 = card,
+	})
+	New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(108), S(27)),
+		Size                   = UDim2.new(1, -S(124), 0, S(13)),
+		Font                   = FONT,
+		Text                   = "@" .. LocalPlayer.Name,
+		TextColor3             = COLORS.SubText,
+		TextSize               = S(11),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		TextTruncate           = Enum.TextTruncate.AtEnd,
+		Parent                 = card,
+	})
+
+	local function InfoRow(y, labelText)
+		local r = New("TextButton", {
+			Name                   = "Info_" .. labelText,
+			BackgroundTransparency = 1,
+			Text                   = "",
+			AutoButtonColor        = false,
+			Position               = UDim2.fromOffset(S(108), y),
+			Size                   = UDim2.new(1, -S(126), 0, S(19)),
+			Parent                 = card,
+		})
+		return r
+	end
+
+	local idRow = InfoRow(S(46), "ID")
+	New("TextLabel", {
+		BackgroundTransparency = 1,
+		Size                   = UDim2.fromScale(0.5, 1),
+		Font                   = FONT_MED,
+		Text                   = "Player ID",
+		TextColor3             = COLORS.SubText,
+		TextSize               = S(11),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		Parent                 = idRow,
+	})
+	local idVal = New("TextLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint            = Vector2.new(1, 0.5),
+		Position               = UDim2.new(1, -S(6), 0.5, 0),
+		Size                   = UDim2.fromScale(0.5, 1),
+		Font                   = FONT_BOLD,
+		Text                   = uid .. "  [copy]",
+		TextColor3             = COLORS.Accent,
+		TextSize               = S(11),
+		TextXAlignment         = Enum.TextXAlignment.Right,
+		Parent                 = idRow,
+	})
+	Bind(idRow.Activated, function()
+		if Copy(uid) then
+			Notify("Success", "Successfully copied")
+		else
+			Notify("Clipboard", "setclipboard недоступен")
+		end
+	end)
+
+
+	local pingRow = InfoRow(S(67), "Ping")
+	New("Frame", {
+		Name             = "Dot",
+		BackgroundColor3 = C(120, 220, 140),
+		BorderSizePixel  = 0,
+		AnchorPoint      = Vector2.new(0, 0.5),
+		Position         = UDim2.fromOffset(S(2), 0.5),
+		Size             = UDim2.fromOffset(S(6), S(6)),
+		Parent           = pingRow,
+	})
+	New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(14), 0),
+		Size                   = UDim2.fromScale(0.6, 1),
+		Font                   = FONT_MED,
+		Text                   = "Ping",
+		TextColor3             = COLORS.SubText,
+		TextSize               = S(11),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		Parent                 = pingRow,
+	})
+	local pingVal = New("TextLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint            = Vector2.new(1, 0.5),
+		Position               = UDim2.new(1, -S(6), 0.5, 0),
+		Size                   = UDim2.fromScale(0.4, 1),
+		Font                   = FONT_BOLD,
+		Text                   = "-- ms",
+		TextColor3             = COLORS.Text,
+		TextSize               = S(11),
+		TextXAlignment         = Enum.TextXAlignment.Right,
+		Parent                 = pingRow,
+	})
+
+	local fpsRow = InfoRow(S(88), "FPS")
+	New("Frame", {
+		Name             = "Dot",
+		BackgroundColor3 = COLORS.Accent,
+		BorderSizePixel  = 0,
+		AnchorPoint      = Vector2.new(0, 0.5),
+		Position         = UDim2.fromOffset(S(2), 0.5),
+		Size             = UDim2.fromOffset(S(6), S(6)),
+		Parent           = fpsRow,
+	})
+	New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(14), 0),
+		Size                   = UDim2.fromScale(0.6, 1),
+		Font                   = FONT_MED,
+		Text                   = "FPS",
+		TextColor3             = COLORS.SubText,
+		TextSize               = S(11),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		Parent                 = fpsRow,
+	})
+	local fpsVal = New("TextLabel", {
+		BackgroundTransparency = 1,
+		AnchorPoint            = Vector2.new(1, 0.5),
+		Position               = UDim2.new(1, -S(6), 0.5, 0),
+		Size                   = UDim2.fromScale(0.4, 1),
+		Font                   = FONT_BOLD,
+		Text                   = "--",
+		TextColor3             = COLORS.Text,
+		TextSize               = S(11),
+		TextXAlignment         = Enum.TextXAlignment.Right,
+		Parent                 = fpsRow,
+	})
+
+	local updT = 0
+	Bind(RunService.Heartbeat, function(dt)
+		updT = updT + dt
+		if updT < 0.25 then return end
+		updT = 0
+		pcall(function()
+			if pingVal.Parent then
+				pingVal.Text = tostring(PingValue) .. " ms"
+			end
+			if fpsVal.Parent then
+				fpsVal.Text = tostring(CurrentFPS)
+				fpsVal.TextColor3 = CurrentFPS < 30 and COLORS.Danger or COLORS.Text
+			end
+		end)
+	end)
+end
+
+
+-- [29] MAIN TAB -------------------------------------------------------
+do
+	local main = Tabs[2]
+	main:AddLabel({ Text = "Основная панель функций SkyLine Hub.", Height = S(20) })
+
+	main:AddToggle({
+		Title    = "Example Toggle",
+		Default  = false,
+		Flag     = "ExToggle",
+		Callback = function(v)
+			Notify("Main", "Toggle: " .. tostring(v))
+		end,
+	})
+
+	main:AddSlider({
+		Title     = "Example Slider",
+		Min       = 0,
+		Max       = 100,
+		Default   = 50,
+		Suffix    = "%",
+		Increment = 1,
+		Flag      = "ExSlider",
+		Callback  = function(v)
+			print("[SkyLine Hub] slider:", v)
+		end,
+	})
+
+	main:AddSlider({
+		Title        = "Combined Slider + Toggle",
+		Min          = 16,
+		Max          = 500,
+		Default      = 16,
+		WithToggle   = true,
+		ToggleTitle  = "Enable",
+		Flag         = "ExCombo",
+		OnToggle     = function(on)
+			Notify("Main", "Enable: " .. tostring(on))
+		end,
+		Callback     = function(v)
+			print("[SkyLine Hub] combo:", v)
+		end,
+	})
+
+	main:AddDropdown({
+		Title    = "Example Dropdown",
+		Options  = { "Option A", "Option B", "Option C" },
+		Default  = "Option A",
+		Flag     = "ExDropdown",
+		Callback = function(sel)
+			Notify("Main", "Выбрано: " .. tostring(sel))
+		end,
+	})
+
+	main:AddButton({
+		Title    = "Test Notification",
+		Callback = function()
+			Notify("SkyLine Hub", "Hello from the Main tab!")
+		end,
+	})
+
+	local visuals = main:AddBlock("Visuals")
+	visuals:AddLabel({ Text = "Пример блока — содержимое сворачивается." })
+	visuals:AddToggle({
+		Title    = "Custom Crosshair",
+		Flag     = "Crosshair",
+		Callback = function(v)
+			print("[SkyLine Hub] crosshair:", v)
+		end,
+	})
+	visuals:AddSlider({
+		Title     = "Crosshair Size",
+		Min       = 4,
+		Max       = 24,
+		Default   = 10,
+		Flag      = "CrosshairSize",
+		Callback  = function() end,
+	})
+	visuals:AddDropdown({
+		Title    = "Style",
+		Options  = { "Dot", "Cross", "Circle" },
+		Flag     = "CrosshairStyle",
+		Callback = function() end,
+	})
+
+	local utility = main:AddBlock("Utility")
+	utility:AddButton({
+		Title    = "Ping Check",
+		Callback = function()
+			Notify("Utility", "Ping: " .. tostring(PingValue) .. " ms")
+		end,
+	})
+	utility:AddToggle({
+		Title    = "Anti Lag (demo)",
+		Flag     = "AntiLagDemo",
+		Callback = function() end,
+	})
+	utility:AddSlider({
+		Title     = "Render Distance",
+		Min       = 10,
+		Max       = 500,
+		Default   = 100,
+		Suffix    = "m",
+		Flag      = "RenderDistance",
+		Callback  = function() end,
+	})
+end
+
+
+-- [30] PLAYER TAB -----------------------------------------------------
+do
+	local player = Tabs[3]
+
+	player:AddSlider({
+		Title        = "Walk Speed",
+		Min          = 16,
+		Max          = 500,
+		Default      = 16,
+		Suffix       = "",
+		WithToggle   = true,
+		ToggleTitle  = "Enable Speed",
+		Flag         = "Speed",
+		OnToggle     = function(on)
+			Features.Speed.On = on
+			ApplySpeed()
+		end,
+		Callback     = function(v)
+			Features.Speed.Value = v
+			if Features.Speed.On then ApplySpeed() end
+		end,
+	})
+
+	player:AddSlider({
+		Title        = "Jump Power",
+		Min          = 50,
+		Max          = 350,
+		Default      = 50,
+		WithToggle   = true,
+		ToggleTitle  = "Custom Jump",
+		Flag         = "JumpPower",
+		OnToggle     = function(on)
+			Features.Jump.On = on
+			ApplyJump()
+		end,
+		Callback     = function(v)
+			Features.Jump.Value = v
+			if Features.Jump.On then ApplyJump() end
+		end,
+	})
+
+	player:AddToggle({
+		Title    = "Highlight ESP",
+		Flag     = "HighlightESP",
+		Callback = function(on)
+			Features.ESP = on
+			SetESP(on)
+		end,
+	})
+
+	player:AddToggle({
+		Title    = "FPS Boost",
+		Flag     = "FPSBoost",
+		Callback = function(on)
+			Features.Boost = on
+			SetBoost(on)
+			if on then Notify("Player", "FPS Boost включён") end
+		end,
+	})
+
+	player:AddToggle({
+		Title    = "Noclip",
+		Flag     = "Noclip",
+		Callback = function(on)
+			Features.Noclip = on
+			pcall(function()
+				local char = GetChar()
+				if char and not on then
+					for _, part in ipairs(char:GetDescendants()) do
+						if part:IsA("BasePart") then part.CanCollide = true end
+					end
+				end
+			end)
+		end,
+	})
+
+	player:AddToggle({
+		Title    = "Infinite Jump",
+		Flag     = "InfiniteJump",
+		Callback = function(on)
+			Features.InfJump = on
+		end,
+	})
+
+	player:AddToggle({
+		Title    = "Anti AFK",
+		Flag     = "AntiAFK",
+		Callback = function(on)
+			Features.AntiAFK = on
+			if on then Notify("Player", "Anti AFK активен") end
+		end,
+	})
+
+	player:AddSlider({
+		Title        = "Spin Speed",
+		Min          = 1,
+		Max          = 100,
+		Default      = 20,
+		WithToggle   = true,
+		ToggleTitle  = "Enable Spin",
+		Flag         = "Spin",
+		OnToggle     = function(on)
+			Features.Spin.On = on
+		end,
+		Callback     = function(v)
+			Features.Spin.Speed = v
+		end,
+	})
+end
+
+
+-- [31] LOADSCRIPT TAB -------------------------------------------------
+do
+	local loadTab = Tabs[4]
+
+	loadTab:AddLabel({ Text = "Нажмите на скрипт для запуска.", Height = S(20) })
+
+	loadTab:AddScriptRow({
+		Title = "Infinite Yield",
+		Callback = function()
+			pcall(function()
+				loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+			end)
+		end,
+	})
+
+	loadTab:AddScriptRow({
+		Title = "Dark Dex Explorer",
+		Callback = function()
+			pcall(function()
+				loadstring(game:HttpGet("https://raw.githubusercontent.com/Babyhamsta/Rblx_Scripts/master/Testing/new_dex.lua"))()
+			end)
+		end,
+	})
+
+	loadTab:AddScriptRow({
+		Title = "SkyLine Test Script",
+		Callback = function()
+			print("[SkyLine Hub] Test script executed!")
+			Notify("LoadScript", "Test script выполнен — смотрите консоль")
+		end,
+	})
+end
+
+
+-- [32] SETTINGS TAB ---------------------------------------------------
+do
+	local settings = Tabs[5]
+
+	settings:AddToggle({
+		Title    = "Disable Heavy Effects",
+		Flag     = "HeavyEffects",
+		Callback = function(on)
+			HeavyOff = on
+			if on and StaticGlow then StaticGlow() end
+			if on then Notify("Settings", "Тяжёлые эффекты отключены") end
+		end,
+	})
+
+	local themeNames = {}
+	for themeName in pairs(THEMES) do
+		themeNames[#themeNames + 1] = themeName
+	end
+	table.sort(themeNames)
+
+	settings:AddDropdown({
+		Title          = "Theme",
+		Options        = themeNames,
+		Default        = "Ocean",
+		Flag           = "SelectedTheme",
+		RefreshOptions = function() return themeNames end,
+		Callback       = function(sel)
+			if ApplyTheme(sel) then
+				Notify("Settings", "Тема: " .. tostring(sel))
+				pcall(SavePreset, "_autosave", true)
+			end
+		end,
+	})
+
+	settings:AddButton({
+		Title = "Save Settings",
+		Callback = function()
+			RequestInput("Save Preset", "Введите название пресета", function(name)
+				if SavePreset(name) then
+					Notify("Settings", "Пресет сохранён: " .. name)
+				end
+			end)
+		end,
+	})
+
+	settings:AddDropdown({
+		Title          = "Load Settings",
+		Options        = { "- no presets -" },
+		Flag           = nil,
+		RefreshOptions = function()
+			local list = ListPresets()
+			if #list == 0 then return { "- no presets -" } end
+			return list
+		end,
+		Callback = function(sel)
+			if sel == "- no presets -" then return end
+			pcall(function() LoadPreset(sel) end)
+		end,
+	})
+
+	settings:AddToggle({
+		Title    = "Auto Save Settings",
+		Default  = true,
+		Flag     = "AutoSave",
+		Callback = function(on)
+			AutoSaveOn = on
+		end,
+	})
+
+	settings:AddButton({
+		Title    = "Destroy GUI",
+		Danger   = true,
+		Callback = function()
+			task.delay(0.15, function()
+				pcall(function() Library:Destroy() end)
+			end)
+		end,
+	})
+end
+
+
+-- [33] SHOW / HIDE CHOREOGRAPHY ---------------------------------------
+local NAV_HIDDEN_X = -(navW + S(46))
+
+ShowInterface = function()
+	if not Hidden or BusyUI then return end
+	BusyUI = true
+	Hidden = false
+	pcall(CloseAllDD)
+
+	WindowLayer.Visible = true
+
+	NavCanvas.GroupTransparency = 1
+	Nav.Position = UDim2.new(0, NAV_HIDDEN_X, 0.5, 0)
+	NavScale.Scale = 0.94
+
+	ContentCanvas.GroupTransparency = 1
+	Content.Position = UDim2.new(0, contentXOffset, 0.5, S(22))
+	ContentScale.Scale = 0.95
+
+	Tween(ArrowLbl, 0.3, { Rotation = 180 }, Enum.EasingStyle.Quad)
+	Tween(ArrowBtn, 0.4, { Position = UDim2.new(0, ARROW_SHOWN_X, 0.5, 0) })
+
+	task.delay(0.05, function()
+		Tween(NavCanvas, 0.5, { GroupTransparency = 0 })
+		Tween(NavScale, 0.55, { Scale = 1 }, Enum.EasingStyle.Back)
+		Tween(Nav, 0.55, { Position = UDim2.new(0, S(18), 0.5, 0) }, Enum.EasingStyle.Cubic)
+	end)
+	task.delay(0.18, function()
+		Tween(ContentCanvas, 0.45, { GroupTransparency = 0 })
+		Tween(ContentScale, 0.5, { Scale = 1 }, Enum.EasingStyle.Cubic)
+		Tween(Content, 0.5, { Position = UDim2.new(0, contentXOffset, 0.5, 0) }, Enum.EasingStyle.Cubic)
+	end)
+	task.delay(0.8, function()
+		BusyUI = false
+	end)
+end
+
+HideInterface = function()
+	if Hidden or BusyUI then return end
+	BusyUI = true
+	pcall(CloseAllDD)
+
+	Tween(NavCanvas, 0.35, { GroupTransparency = 1 })
+	Tween(NavScale, 0.35, { Scale = 0.94 })
+	Tween(Nav, 0.4,
+		{ Position = UDim2.new(0, NAV_HIDDEN_X, 0.5, 0) },
+		Enum.EasingStyle.Cubic, Enum.EasingDirection.In)
+
+	Tween(ContentCanvas, 0.35, { GroupTransparency = 1 })
+	Tween(ContentScale, 0.35, { Scale = 0.95 })
+	Tween(Content, 0.4,
+		{ Position = UDim2.new(0, contentXOffset, 0.5, S(22)) },
+		Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+
+	Tween(ArrowLbl, 0.3, { Rotation = 0 }, Enum.EasingStyle.Quad)
+	Tween(ArrowBtn, 0.4, { Position = UDim2.new(0, ARROW_HIDDEN_X, 0.5, 0) })
+
+	task.delay(0.5, function()
+		Hidden = true
+		WindowLayer.Visible = false
+		BusyUI = false
+	end)
+end
+
+-- [34] INITIAL TAB VISIBILITY -----------------------------------------
+WindowLayer.Visible = false
+Tabs[1].Page.Visible = true
+
+
+-- [35] LOADING SCREEN -------------------------------------------------
+local function RunLoading()
+	local LoadingLayer = New("CanvasGroup", {
+		Name                   = "LoadingLayer",
+		BackgroundTransparency = 1,
+		BorderSizePixel        = 0,
+		Size                   = UDim2.fromScale(1, 1),
+		ZIndex                 = 200,
+		Parent                 = ScreenGui,
+	})
+	local loadingScale = New("UIScale", { Scale = 1, Parent = LoadingLayer })
+
+	local scrim = New("Frame", {
+		Name                   = "Scrim",
+		BackgroundColor3       = C(0, 0, 0),
+		BackgroundTransparency = 1,
+		BorderSizePixel        = 0,
+		Size                   = UDim2.fromScale(1, 1),
+		Parent                 = LoadingLayer,
+	})
+
+	local card = New("CanvasGroup", {
+		Name                   = "LoadingCard",
+		BackgroundColor3       = COLORS.Background,
+		BorderSizePixel        = 0,
+		AnchorPoint            = Vector2.new(0.5, 0.5),
+		Position               = UDim2.fromScale(0.5, 0.5),
+		Size                   = UDim2.fromOffset(S(340), S(190)),
+		GroupTransparency      = 1,
+		Parent                 = LoadingLayer,
+	})
+	Corner(card, S(18))
+	StrokeOf(card)
+	local cardScale = New("UIScale", { Scale = 0.7, Parent = card })
+
+	local titleGrad = New("UIGradient",
+		{ Color = ColorSequence.new(COLORS.Text, Theme.Accent), Parent = nil })
+	local title = New("TextLabel", {
+		Name                   = "Title",
+		BackgroundTransparency = 1,
+		AnchorPoint            = Vector2.new(0.5, 0),
+		Position               = UDim2.new(0.5, 0, 0, S(34)),
+		Size                   = UDim2.fromOffset(S(300), S(40)),
+		Font                   = Enum.Font.GothamBlack,
+		Text                   = "SkyLine Hub",
+		TextSize               = S(30),
+		TextColor3             = COLORS.Text,
+		Parent                 = card,
+	})
+	titleGrad.Parent = title
+
+	local status = New("TextLabel", {
+		Name                   = "Status",
+		BackgroundTransparency = 1,
+		AnchorPoint            = Vector2.new(0.5, 0),
+		Position               = UDim2.new(0.5, 0, 0, S(84)),
+		Size                   = UDim2.fromOffset(S(280), S(16)),
+		Font                   = FONT_MED,
+		Text                   = "Loading",
+		TextColor3             = COLORS.SubText,
+		TextSize               = S(12),
+		Parent                 = card,
+	})
+
+	local waveArea = New("Frame", {
+		Name                   = "WaveArea",
+		BackgroundTransparency = 1,
+		BorderSizePixel        = 0,
+		Position               = UDim2.new(0, 0, 0, S(120)),
+		Size                   = UDim2.new(1, 0, 0, S(44)),
+		Parent                 = card,
+	})
+	local BALL_COUNT = 8
+	local balls = {}
+	for i = 1, BALL_COUNT do
+		local b = New("Frame", {
+			Name             = "Ball" .. i,
+			BackgroundColor3 = i % 2 == 1 and Theme.Accent or COLORS.Text,
+			BackgroundTransparency = i % 2 == 0 and 0.25 or 0,
+			BorderSizePixel  = 0,
+			AnchorPoint      = Vector2.new(0.5, 0.5),
+			Size             = UDim2.fromOffset(S(11), S(11)),
+			Position         = UDim2.new(0.5, S((i - 4) * 18), 0.5, 0),
+			Parent           = waveArea,
+		})
+		Corner(b, S(6))
+		balls[i] = b
+	end
+
+	Tween(scrim, 0.5, { BackgroundTransparency = 0.35 })
+	Tween(LoadingLayer, 0.45, { GroupTransparency = 0 }, Enum.EasingStyle.Quad)
+	Tween(cardScale, 0.55, { Scale = 1 }, Enum.EasingStyle.Back)
+
+	local statuses = { "Loading assets...", "Building interface...", "Injecting modules...", "Almost ready..." }
+	local t0 = os.clock()
+	local done = false
+
+	local animConn = RunService.RenderStepped:Connect(function()
+		local t = os.clock() - t0
+		for i, b in ipairs(balls) do
+			local x = math.sin(t * 2.4 - (i - 1) * 0.55) * S(52)
+			local y = math.sin(t * 3 + (i - 1) * 0.8) * S(3)
+			b.Position = UDim2.new(0.5, x - S((i - 4) * 18), 0.5, y)
+		end
+		titleGrad.Offset = Vector2.new(math.sin(t * 0.9) * 0.35, 0)
+	end)
+
+	task.spawn(function()
+		while not done do
+			for _, s in ipairs(statuses) do
+				if done then break end
+				status.Text = s
+				task.wait(0.55)
+			end
+		end
+	end)
+
+	task.delay(2.2, function()
+		done = true
+		pcall(function() animConn:Disconnect() end)
+
+		Tween(card, 0.32, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		Tween(cardScale, 0.3, { Scale = 0.92 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		Tween(LoadingLayer, 0.35, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		Tween(scrim, 0.4, { BackgroundTransparency = 1 })
+
+		Tween(AmbientDim, 0.7, { BackgroundTransparency = 0.38 })
+
+		for i, e in ipairs(GlowEdges) do
+			task.delay(i * 0.06, function()
+				Tween(e.Frame, 0.9, { BackgroundTransparency = e.Base })
+			end)
+		end
+
+		task.delay(0.4, function() pcall(function() LoadingLayer:Destroy() end) end)
+		task.delay(0.45, function() pcall(function() ShowInterface() end) end)
+		task.delay(1.6, function()
+			if FS.Exists(FOLDER .. "/_autosave.skyline") then
+				pcall(LoadPreset, "_autosave", true)
+			end
+		end)
+	end)
+end
+
+
+-- [36] PUBLIC API -----------------------------------------------------
+Library = {}
+
+Library.Version = "1.0"
+Library.Flags   = Flags
+Library.Themes  = THEMES
+
+Library.Window = {
+	Tabs            = TabByName,
+	GetTab          = function(self, name) return TabByName[tostring(name)] end,
+	AddScriptButton = function(self, cfg)
+		return AddScriptRow(Tabs[4].Host, cfg)
+	end,
+	Show   = function() pcall(ShowInterface) end,
+	Hide   = function() pcall(HideInterface) end,
+	Toggle = function()
+		if Hidden then pcall(ShowInterface) else pcall(HideInterface) end
+	end,
+	SetTheme = function(self, name) return ApplyTheme(name) end,
+}
+
+Library.Notify     = Notify
+Library.SetTheme   = ApplyTheme
+Library.SavePreset = function(_, name) return SavePreset(name) end
+Library.LoadPreset = function(_, name) return LoadPreset(name) end
+Library.GetPresets = ListPresets
+
+Library.Destroy = function(_)
+	pcall(function()
+		Features.Speed.On  = false
+		Features.Jump.On   = false
+		Features.Noclip    = false
+		Features.Spin.On   = false
+		ApplySpeed()
+		ApplyJump()
+		SetESP(false)
+		SetBoost(false)
+	end)
+	for _, co in ipairs(Threads) do
+		pcall(function() task.cancel(co) end)
+	end
+	for _, conn in ipairs(Conns) do
+		pcall(function() conn:Disconnect() end)
+	end
+	for i = #Threads, 1, -1 do Threads[i] = nil end
+	for i = #Conns, 1, -1 do Conns[i] = nil end
+	pcall(function() ScreenGui:Destroy() end)
+	local g = _G
+	pcall(function() if getgenv then g = getgenv() end end)
+	g.SkyLineHubInstance = nil
+end
+
+RunLoading()
+
+do
+	local g = _G
+	pcall(function() if getgenv then g = getgenv() end end)
+	g.SkyLineHubInstance = Library
+end
+
+print("[SkyLine Hub] v" .. Library.Version .. " loaded")
+
+return Library
