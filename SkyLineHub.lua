@@ -1293,8 +1293,12 @@ local function CreatePage(def, index)
 			ScrollBarImageTransparency = 0.35,
 			Parent                 = page,
 		})
-		ListLayout(host, S(8))
-		Pad(host, S(14), S(12), S(14), S(14))
+ layout = ListLayout(host, S(8))
+(host, S(14), S(12), S(14), S(14))
+("AbsoluteContentSize"):Connect(function()
+.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + S(26))
+)
+.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + S(26))
 	end
 	local tab = {
 		Name = def.Name, Order = index,
@@ -1861,10 +1865,15 @@ local function AddSlider(host, cfg)
 end
 
 
--- [23] DROPDOWN -------------------------------------------------------
+-- [23] DROPDOWN (single + multi select) -------------------------------
 local OpenDDRef = nil
 
--- закрытие по клику вне дропдауна
+local function CloseOpenDropdown()
+	if OpenDDRef and OpenDDRef.Close then
+		pcall(OpenDDRef.Close)
+	end
+end
+
 Bind(UserInputService.InputBegan, function(input)
 	if not OpenDDRef then return end
 	local t = input.UserInputType
@@ -1882,20 +1891,23 @@ Bind(UserInputService.InputBegan, function(input)
 		inPop = m.X >= pp.X and m.X <= pp.X + ps.X and m.Y >= pp.Y and m.Y <= pp.Y + ps.Y
 	end
 	if not inBox and not inPop then
-		pcall(dd.Close)
+		CloseOpenDropdown()
 	end
 end)
 
-local function BuildDropdownPopup(box, opts, isSelFn, onSelect)
+-- state: { Multi, IsSel(opt), OnItem(opt), OnAll(), OnClear() }
+local function BuildDropdownPopup(box, opts, state)
 	opts = opts or {}
 	local absPos = box.AbsolutePosition
-	local listH = math.max(S(42), math.min(#opts * S(30) + S(12), S(172)))
+	local rowsH = #opts * S(30) + S(12)
+	local footH = state.Multi and S(34) or 0
+	local listH = math.max(S(42), math.min(rowsH + footH, S(210)))
 	local popup = New("CanvasGroup", {
 		Name                   = "DropdownPopup",
 		BackgroundColor3       = COLORS.Secondary,
 		BorderSizePixel        = 0,
 		Position               = UDim2.fromOffset(absPos.X, absPos.Y + box.AbsoluteSize.Y + S(6)),
-		Size                   = UDim2.fromOffset(math.max(box.AbsoluteSize.X, S(110)), listH),
+		Size                   = UDim2.fromOffset(math.max(box.AbsoluteSize.X, S(120)), listH),
 		GroupTransparency      = 1,
 		ZIndex                 = 120,
 		Parent                 = PopupLayer,
@@ -1906,12 +1918,13 @@ local function BuildDropdownPopup(box, opts, isSelFn, onSelect)
 	Tween(popup, 0.18, { GroupTransparency = 0 })
 	Tween(popScale, 0.2, { Scale = 1 }, Enum.EasingStyle.Back)
 
+	local listHInner = listH - footH - S(8)
 	local scroll = New("ScrollingFrame", {
 		Name                       = "List",
 		BackgroundTransparency     = 1,
 		BorderSizePixel            = 0,
 		Position                   = UDim2.fromOffset(S(4), S(4)),
-		Size                       = UDim2.new(1, -S(8), 1, -S(8)),
+		Size                       = UDim2.new(1, -S(8), 0, listHInner),
 		CanvasSize                 = UDim2.new(),
 		AutomaticCanvasSize        = Enum.AutomaticSize.Y,
 		ScrollBarThickness         = S(3),
@@ -1935,19 +1948,40 @@ local function BuildDropdownPopup(box, opts, isSelFn, onSelect)
 			Parent                 = scroll,
 		})
 		Corner(it, S(7))
+
+		local lblX = S(10)
+		local check = nil
+		if state.Multi then
+			lblX = S(32)
+			check = New("Frame", {
+				Name                   = "Check",
+				BackgroundColor3       = Theme.Accent,
+				BackgroundTransparency = 1,
+				BorderSizePixel        = 0,
+				AnchorPoint            = Vector2.new(0, 0.5),
+				Position               = UDim2.fromOffset(S(10), 0.5),
+				Size                   = UDim2.fromOffset(S(15), S(15)),
+				ZIndex                 = 123,
+				Parent                 = it,
+			})
+			Corner(check, S(4))
+			StrokeOf(check, COLORS.Stroke, 1, 0.15)
+		end
+
 		local lbl = New("TextLabel", {
 			BackgroundTransparency = 1,
-			Position               = UDim2.fromOffset(S(10), 0),
-			Size                   = UDim2.new(1, -S(20), 1, 0),
+			Position               = UDim2.fromOffset(lblX, 0),
+			Size                   = UDim2.new(1, -(lblX + S(10)), 1, 0),
 			Font                   = FONT_MED,
 			Text                   = tostring(opt),
-			TextColor3             = isSelFn(opt) and Theme.Accent or COLORS.Text,
+			TextColor3             = state.IsSel(opt) and Theme.Accent or COLORS.Text,
 			TextSize               = S(12),
 			TextXAlignment         = Enum.TextXAlignment.Left,
 			TextTruncate           = Enum.TextTruncate.AtEnd,
 			ZIndex                 = 123,
 			Parent                 = it,
 		})
+
 		Bind(it.MouseEnter, function()
 			Tween(it, 0.12, { BackgroundTransparency = 0 })
 		end)
@@ -1955,39 +1989,111 @@ local function BuildDropdownPopup(box, opts, isSelFn, onSelect)
 			Tween(it, 0.16, { BackgroundTransparency = 1 })
 		end)
 		Bind(it.Activated, function()
-			SafeCall(onSelect, opt, it)
+			SafeCall(state.OnItem, opt)
 		end)
-		items[i] = { Btn = it, Lbl = lbl }
+
+		items[i] = { Btn = it, Lbl = lbl, Check = check }
+	end
+
+	if state.Multi then
+		local foot = New("Frame", {
+			Name                   = "Footer",
+			BackgroundColor3       = COLORS.Stroke,
+			BackgroundTransparency = 0.75,
+			BorderSizePixel        = 0,
+			Position               = UDim2.new(0, S(6), 1, -footH - S(4)),
+			Size                   = UDim2.new(1, -S(12), 0, footH - S(6)),
+			ZIndex                 = 124,
+			Parent                 = popup,
+		})
+		Corner(foot, S(7))
+		local mkBtn = function(txt, xAnchor, xOff, cb)
+			local b = New("TextButton", {
+				Name                   = txt,
+				BackgroundColor3       = COLORS.Hover,
+				BackgroundTransparency = 1,
+				BorderSizePixel        = 0,
+				Text                   = txt,
+				Font                   = FONT_MED,
+				TextColor3             = COLORS.SubText,
+				TextSize               = S(11),
+				AutoButtonColor        = false,
+				AnchorPoint            = Vector2.new(xAnchor, 0.5),
+				Position               = UDim2.new(xAnchor, xOff, 0.5, 0),
+				Size                   = UDim2.fromOffset(S(96), S(22)),
+				ZIndex                 = 125,
+				Parent                 = foot,
+			})
+			Corner(b, S(5))
+			Bind(b.MouseEnter, function()
+				Tween(b, 0.12, { BackgroundTransparency = 0, TextColor3 = COLORS.Text })
+			end)
+			Bind(b.MouseLeave, function()
+				Tween(b, 0.16, { BackgroundTransparency = 1, TextColor3 = COLORS.SubText })
+			end)
+			Bind(b.Activated, function()
+				SafeCall(cb)
+			end)
+			return b
+		end
+		mkBtn("Select All", 0, S(8), state.OnAll)
+		mkBtn("Clear", 1, -S(8), state.OnClear)
 	end
 
 	return { Popup = popup, Items = items }
 end
 
-local function RestyleItems(handle, sel)
+local function RestyleItems(handle, isSelFn)
 	if not handle then return end
 	for _, item in ipairs(handle.Items) do
-		local isSel = tostring(item.Lbl.Text) == tostring(sel)
+		local isSel = isSelFn(tostring(item.Lbl.Text))
 		item.Lbl.TextColor3 = isSel and Theme.Accent or COLORS.Text
+		if item.Check then
+			Tween(item.Check, 0.15, {
+				BackgroundTransparency = isSel and 0 or 1,
+			})
+		end
 	end
 end
-
 
 local DDRegistry = {}
 
 local function AddDropdown(host, cfg)
 	cfg = cfg or {}
+	local isMulti = cfg.Multi == true
+
 	local opts = {}
 	if type(cfg.Options) == "table" then
 		for _, o in ipairs(cfg.Options) do
 			opts[#opts + 1] = tostring(o)
 		end
 	end
-	local sel = cfg.Default and tostring(cfg.Default) or nil
-	local hasDefault = false
-	for _, o in ipairs(opts) do
-		if o == sel then hasDefault = true break end
+
+	local sel = nil          -- single: строка
+	local selSet = {}        -- multi: [value]=true
+	local selCount = 0
+
+	if isMulti then
+		local init = cfg.Default
+		if type(init) ~= "table" then init = {} end
+		for _, o in ipairs(init) do
+			local v = tostring(o)
+			for _, existing in ipairs(opts) do
+				if existing == v and not selSet[v] then
+					selSet[v] = true
+					selCount = selCount + 1
+					break
+				end
+			end
+		end
+	else
+		sel = cfg.Default and tostring(cfg.Default) or nil
+		local okDef = false
+		for _, o in ipairs(opts) do
+			if o == sel then okDef = true break end
+		end
+		if not okDef then sel = opts[1] end
 	end
-	if not hasDefault then sel = opts[1] end
 
 	local row = New("TextButton", {
 		Name             = "Dropdown",
@@ -2003,11 +2109,15 @@ local function AddDropdown(host, cfg)
 	HoverFX(row)
 	RowLabel(row, cfg.Title or "Dropdown")
 
-	local boxW = S(96)
-	for _, o in ipairs(opts) do
-		boxW = math.max(boxW, Measure(o, S(12), FONT_MED) + S(36))
+	local function MeasureMaxW()
+		local w = S(96)
+		for _, o in ipairs(opts) do
+			w = math.max(w, Measure(o, S(12), FONT_MED) + (isMulti and S(56) or S(36)))
+		end
+		return w
 	end
-	boxW = clamp(boxW, S(96), S(240))
+
+	local boxW = clamp(MeasureMaxW(), S(100), S(260))
 
 	local box = New("Frame", {
 		Name             = "Box",
@@ -2026,7 +2136,7 @@ local function AddDropdown(host, cfg)
 		Position               = UDim2.fromOffset(S(10), 0),
 		Size                   = UDim2.new(1, -S(42), 1, 0),
 		Font                   = FONT_MED,
-		Text                   = sel or "...",
+		Text                   = "...",
 		TextColor3             = COLORS.Text,
 		TextSize               = S(12),
 		TextXAlignment         = Enum.TextXAlignment.Left,
@@ -2048,6 +2158,32 @@ local function AddDropdown(host, cfg)
 
 	local dd = { Box = box, Handle = nil, open = false }
 
+	local function UpdateLabel()
+		if isMulti then
+			if selCount == 0 then
+				selLbl.Text = "None"
+				selLbl.TextColor3 = COLORS.SubText
+			else
+				local names = {}
+				for _, o in ipairs(opts) do
+					if selSet[o] then names[#names + 1] = o end
+				end
+				local first = names[1] or ""
+				if #names > 2 then
+					selLbl.Text = first .. ", " .. names[2] .. " +" .. (#names - 2)
+				elseif #names == 2 then
+					selLbl.Text = names[1] .. ", " .. names[2]
+				else
+					selLbl.Text = first
+				end
+				selLbl.TextColor3 = COLORS.Text
+			end
+		else
+			selLbl.Text = sel or "..."
+			selLbl.TextColor3 = sel and COLORS.Text or COLORS.SubText
+		end
+	end
+
 	function dd.Close()
 		if not dd.open then return end
 		dd.open = false
@@ -2062,42 +2198,101 @@ local function AddDropdown(host, cfg)
 		end
 	end
 
-	local function Select(opt, silent)
-		sel = tostring(opt)
-		selLbl.Text = sel
-		RestyleItems(dd.Handle, sel)
-		pcall(function() dd.Close() end)
-		if not silent then
+	local function FireChange()
+		if isMulti then
+			local out = {}
+			for _, o in ipairs(opts) do
+				if selSet[o] then out[#out + 1] = o end
+			end
+			SafeCall(cfg.Callback, out)
+		else
 			SafeCall(cfg.Callback, sel)
-			ScheduleAutoSave()
 		end
+		ScheduleAutoSave()
 	end
-	dd.Select = Select
 
 	function dd.Open()
 		if dd.open then pcall(dd.Close) return end
-		pcall(CloseAllDD)
+		CloseOpenDropdown()
+
 		if cfg.RefreshOptions then
 			local okR, newList = pcall(cfg.RefreshOptions)
 			if okR and type(newList) == "table" then
 				opts = {}
 				for _, x in ipairs(newList) do opts[#opts + 1] = tostring(x) end
-				local hasSel = false
-				for _, o in ipairs(opts) do if o == sel then hasSel = true break end end
-				if not hasSel then
-					sel = opts[1]
-					selLbl.Text = sel or "..."
+				if isMulti then
+					for v in pairs(selSet) do
+						local alive = false
+						for _, o in ipairs(opts) do if o == v then alive = true break end end
+						if not alive then selSet[v] = nil selCount = selCount - 1 end
+					end
+				else
+					local hasSel = false
+					for _, o in ipairs(opts) do if o == sel then hasSel = true break end end
+					if not hasSel then sel = opts[1] end
 				end
 			end
 		end
 		if #opts == 0 then return end
+
 		dd.open = true
 		OpenDDRef = dd
-		dd.Handle = BuildDropdownPopup(box, opts,
-			function(o) return o == sel end,
-			function(o) Select(o) end)
+
+		dd.Handle = BuildDropdownPopup(box, opts, {
+			Multi = isMulti,
+			IsSel = function(o)
+				if isMulti then return selSet[o] == true end
+				return o == sel
+			end,
+			OnItem = function(o)
+				o = tostring(o)
+				if isMulti then
+					if selSet[o] then
+						selSet[o] = nil
+						selCount = selCount - 1
+					else
+						selSet[o] = true
+						selCount = selCount + 1
+					end
+					UpdateLabel()
+					RestyleItems(dd.Handle, function(v) return selSet[v] == true end)
+					FireChange()
+				else
+					sel = o
+					UpdateLabel()
+					RestyleItems(dd.Handle, function(v) return v == sel end)
+					pcall(dd.Close)
+					FireChange()
+				end
+			end,
+			OnAll = function()
+				selSet = {}
+				selCount = 0
+				for _, o in ipairs(opts) do
+					selSet[o] = true
+					selCount = selCount + 1
+				end
+				UpdateLabel()
+				RestyleItems(dd.Handle, function(v) return selSet[v] == true end)
+				FireChange()
+			end,
+			OnClear = function()
+				selSet = {}
+				selCount = 0
+				UpdateLabel()
+				RestyleItems(dd.Handle, function() return false end)
+				FireChange()
+			end,
+		})
+
+		RestyleItems(dd.Handle, function(o)
+			if isMulti then return selSet[o] == true end
+			return o == sel
+		end)
+
 		Tween(chev, 0.25, { Rotation = 180 }, Enum.EasingStyle.Quart)
 		Tween(ddStroke, 0.25, { Color = Theme.Accent })
+		UpdateLabel()
 	end
 
 	Bind(row.Activated, function()
@@ -2106,39 +2301,69 @@ local function AddDropdown(host, cfg)
 
 	local regEntry = { Close = dd.Close }
 	Insert(DDRegistry, regEntry)
-
 	CloseAllDD = function()
 		for _, e in ipairs(DDRegistry) do pcall(e.Close) end
 	end
 
-	local ctrl = { Type = "Dropdown", Row = row }
-	function ctrl.Get() return sel end
-	function ctrl.Set(v, fire)
-		local target = tostring(v)
-		for _, o in ipairs(opts) do
-			if o == target then
-				Select(o, fire == false)
-				return
+	local ctrl = { Type = "Dropdown", Multi = isMulti, Row = row }
+	ctrl.Get = function()
+		if isMulti then
+			local out = {}
+			for _, o in ipairs(opts) do
+				if selSet[o] then out[#out + 1] = o end
+			end
+			return out
+		end
+		return sel
+	end
+	ctrl.Set = function(v, fire)
+		if isMulti then
+			selSet = {}
+			selCount = 0
+			if type(v) == "table" then
+				for _, item in ipairs(v) do
+					local target = tostring(item)
+					for _, o in ipairs(opts) do
+						if o == target then
+							selSet[target] = true
+							selCount = selCount + 1
+							break
+						end
+					end
+				end
+			end
+			UpdateLabel()
+			RestyleItems(dd.Handle, function(x) return selSet[x] == true end)
+			if fire ~= false then FireChange() end
+		else
+			local target = tostring(v)
+			for _, o in ipairs(opts) do
+				if o == target then
+					sel = target
+					UpdateLabel()
+					RestyleItems(dd.Handle, function(x) return x == sel end)
+					if fire ~= false then FireChange() end
+					return
+				end
 			end
 		end
 	end
-	function ctrl.Refresh(list)
+	ctrl.Refresh = function(list)
 		if type(list) ~= "table" then return end
 		opts = {}
 		for _, x in ipairs(list) do opts[#opts + 1] = tostring(x) end
 	end
 	ctrl.Destroy = function()
-		pcall(function() dd.Close() end)
+		pcall(dd.Close)
 		for i = #DDRegistry, 1, -1 do
 			if DDRegistry[i] == regEntry then table.remove(DDRegistry, i) break end
 		end
 		pcall(function() row:Destroy() end)
 	end
 	RegisterFlag(cfg.Flag, ctrl)
+	UpdateLabel()
 	return ctrl
 end
-
-
 -- [24] SCRIPT BUTTON (стрелка вправо, не раскрывается) ----------------
 local function AddScriptRow(host, cfg)
 	cfg = cfg or {}
@@ -2553,6 +2778,7 @@ do
 		Parent                 = avatarHolder,
 	})
 	Corner(AvatarImg, S(35))
+	AvatarImg.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(LocalPlayer.UserId) .. "&w=150&h=150"
 	Spawn(function()
 		pcall(function()
 			local content = Players:GetUserThumbnailAsync(
@@ -2564,6 +2790,7 @@ do
 				initials.Text = ""
 			end
 		end)
+	end)
 	end)
 
 	New("TextLabel", {
@@ -2778,7 +3005,18 @@ do
 		end,
 	})
 
-	main:AddButton({
+		main:AddDropdown({
+		Title    = "Multi Select",
+		Options  = { "Apple", "Banana", "Cherry", "Dragon Fruit" },
+		Default  = { "Apple" },
+		Multi    = true,
+		Flag     = "ExMulti",
+		Callback = function(list)
+			Notify("Multi Select", "Выбрано: " .. tostring(#list))
+		end,
+	})
+
+main:AddButton({
 		Title    = "Test Notification",
 		Callback = function()
 			Notify("SkyLine Hub", "Hello from the Main tab!")
@@ -3402,4 +3640,3 @@ SkyLine.Notify("Hi", "from API")
 SkyLine.Window.Toggle()
 
 ================================================================ ]]
-
