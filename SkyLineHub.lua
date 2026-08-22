@@ -1115,9 +1115,11 @@ pcall(function()
 	if Camera then vp = Camera.ViewportSize end
 end)
 
-local contentXOffset = S(18) + navW + S(14)
-local contentW = math.max(S(380), math.min(S(620), vp.X - contentXOffset - S(28)))
-local contentH = math.max(S(320), math.min(S(440), vp.Y - S(56)))
+-- окно центрируется по экрану; навигационная панель остаётся слева
+local navRight = S(18) + navW + S(12)
+local contentW = math.max(S(360),
+	math.min(S(640), math.min(vp.X - S(48), vp.X - navRight * 2 - S(28))))
+local contentH = math.max(S(320), math.min(S(460), vp.Y - S(56)))
 
 local ContentCanvas = New("CanvasGroup", {
 	Name                   = "ContentCanvas",
@@ -1132,8 +1134,8 @@ local Content = New("Frame", {
 	Name             = "Window",
 	BackgroundColor3 = COLORS.Background,
 	BorderSizePixel  = 0,
-	AnchorPoint      = Vector2.new(0, 0.5),
-	Position         = UDim2.new(0, contentXOffset, 0.5, 0),
+	AnchorPoint      = Vector2.new(0.5, 0.5),
+	Position         = UDim2.fromScale(0.5, 0.5),
 	Size             = UDim2.fromOffset(contentW, contentH),
 	Parent           = ContentCanvas,
 })
@@ -1340,28 +1342,39 @@ SelectTab = function(idx)
 	CommitNav(idx)
 	-- новая вкладка выше в панели → старая уходит ВНИЗ, новая появляется СВЕРХУ
 	local down = idx < oldT.Order
-	local off = S(44)
-	local D = 0.34
+	local off = S(46)
+	local outD = 0.26   -- старая уходит первой
+	local inD = 0.34    -- новая въезжает следом
+
+	-- фаза 1: старая вкладка плавно уезжает вверх/вниз и тает
 	oldT.Page.Visible = true
-	Tween(oldT.PageScale, D, { Scale = 0.94 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-	Tween(oldT.Page, D,
+	Tween(oldT.PageScale, outD, { Scale = 0.93 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	Tween(oldT.Page, outD,
 		{ Position = UDim2.fromOffset(0, down and off or -off) },
-		Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-	Tween(oldT.Page, D, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-	newT.Page.Visible = true
-	newT.Page.Position = UDim2.fromOffset(0, down and -off or off)
-	newT.Page.GroupTransparency = 1
-	newT.PageScale.Scale = 0.94
-	Tween(newT.Page, D, { Position = UDim2.fromOffset(0, 0) })
-	Tween(newT.Page, D, { GroupTransparency = 0 })
-	Tween(newT.PageScale, D, { Scale = 1 }, Enum.EasingStyle.Back)
+		Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+	Tween(oldT.Page, outD, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+
 	if oldT.Panel then pcall(oldT.Panel.Hide) end
+
+	-- фаза 2: новая появляется с противоположной стороны
+	task.delay(outD * 0.62, function()
+		if ActiveIdx ~= idx then return end
+		newT.Page.Visible = true
+		newT.Page.Position = UDim2.fromOffset(0, down and -off or off)
+		newT.Page.GroupTransparency = 1
+		newT.PageScale.Scale = 0.95
+		Tween(newT.Page, inD, { Position = UDim2.fromOffset(0, 0) })
+		Tween(newT.Page, inD, { GroupTransparency = 0 })
+		Tween(newT.PageScale, inD, { Scale = 1 }, Enum.EasingStyle.Quint)
+	end)
+
 	if newT.Panel then
-		task.delay(D * 0.5, function()
+		task.delay(outD * 0.9, function()
 			if ActiveIdx == idx and newT.Panel then pcall(newT.Panel.Show) end
 		end)
 	end
-	task.delay(D * 1.05, function()
+
+	task.delay(0.62, function()
 		Switching = false
 		if ActiveIdx ~= idx then return end
 		oldT.Page.Visible = false
@@ -2314,7 +2327,7 @@ EnsurePanel = function(tab)
 		if Camera then vph = Camera.ViewportSize end
 	end)
 	local winTopY = math.floor((vph.Y - contentH) / 2)
-	local panelX = contentXOffset + contentW + S(12)
+	local panelX = math.floor(vph.X / 2 + contentW / 2 + S(12))
 
 	local canvas = New("CanvasGroup", {
 		Name                   = "BlockNav",
@@ -3076,8 +3089,14 @@ ShowInterface = function()
 	NavScale.Scale = 0.94
 
 	ContentCanvas.GroupTransparency = 1
-	Content.Position = UDim2.new(0, contentXOffset, 0.5, S(22))
+	Content.Position = UDim2.new(0.5, 0, 0.5, S(22))
 	ContentScale.Scale = 0.95
+
+	-- плавно проявляем амбиент (затемнение + северное сияние)
+	Tween(AmbientDim, 0.7, { BackgroundTransparency = 0.38 })
+	for _, e in ipairs(GlowEdges) do
+		Tween(e.Frame, 0.9, { BackgroundTransparency = e.Base })
+	end
 
 	Tween(ArrowLbl, 0.3, { Rotation = 180 }, Enum.EasingStyle.Quad)
 	Tween(ArrowBtn, 0.4, { Position = UDim2.new(0, ARROW_SHOWN_X, 0.5, 0) })
@@ -3090,7 +3109,7 @@ ShowInterface = function()
 	task.delay(0.18, function()
 		Tween(ContentCanvas, 0.45, { GroupTransparency = 0 })
 		Tween(ContentScale, 0.5, { Scale = 1 }, Enum.EasingStyle.Cubic)
-		Tween(Content, 0.5, { Position = UDim2.new(0, contentXOffset, 0.5, 0) }, Enum.EasingStyle.Cubic)
+		Tween(Content, 0.5, { Position = UDim2.fromScale(0.5, 0.5) }, Enum.EasingStyle.Cubic)
 	end)
 	end)
 	if not okShow then warn("[SkyLine Hub] show error:", errShow) end
@@ -3116,8 +3135,14 @@ HideInterface = function()
 	Tween(ContentCanvas, 0.35, { GroupTransparency = 1 })
 	Tween(ContentScale, 0.35, { Scale = 0.95 })
 	Tween(Content, 0.4,
-		{ Position = UDim2.new(0, contentXOffset, 0.5, S(22)) },
+		{ Position = UDim2.new(0.5, 0, 0.5, S(22)) },
 		Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+
+	-- плавно гасим амбиент вместе с меню
+	Tween(AmbientDim, 0.55, { BackgroundTransparency = 1 })
+	for _, e in ipairs(GlowEdges) do
+		Tween(e.Frame, 0.55, { BackgroundTransparency = 1 })
+	end
 
 	Tween(ArrowLbl, 0.3, { Rotation = 0 }, Enum.EasingStyle.Quad)
 	Tween(ArrowBtn, 0.4, { Position = UDim2.new(0, ARROW_HIDDEN_X, 0.5, 0) })
@@ -3377,3 +3402,4 @@ SkyLine.Notify("Hi", "from API")
 SkyLine.Window.Toggle()
 
 ================================================================ ]]
+
