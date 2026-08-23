@@ -1058,12 +1058,12 @@ for i, def in ipairs(NAV_DEFS) do
 		BackgroundTransparency = 1,
 		BorderSizePixel        = 0,
 		Position               = UDim2.new(0, navW + S(10), 0, BtnY(i) + math.floor((navBtnH - S(26)) / 2)),
-		Size                   = UDim2.fromOffset(S(96), S(26)),
+		Size                   = UDim2.fromOffset(Measure(def.Name, S(12), FONT_MED) + S(26), S(26)),
 		Font                   = FONT_MED,
 		Text                   = def.Name,
 		TextColor3             = COLORS.Text,
 		TextSize               = S(12),
-		TextXAlignment         = Enum.TextXAlignment.Left,
+		TextXAlignment         = Enum.TextXAlignment.Center,
 		Visible                = false,
 		ZIndex                 = 10,
 		Parent                 = Nav,
@@ -1963,11 +1963,11 @@ local function BuildDropdownPopup(box, opts, state)
 		Name                   = "DropdownPopup",
 		BackgroundColor3       = COLORS.Secondary,
 		BorderSizePixel        = 0,
-		Position               = UDim2.fromOffset(absPos.X, absPos.Y + box.AbsoluteSize.Y + S(6)),
+		Position               = UDim2.new(0, 0, 1, S(6)),
 		Size                   = UDim2.fromOffset(math.max(box.AbsoluteSize.X, S(120)), listH),
 		GroupTransparency      = 1,
 		ZIndex                 = 120,
-		Parent                 = PopupLayer,
+		Parent                 = box,
 	})
 	Corner(popup, S(10))
 	StrokeOf(popup)
@@ -2249,6 +2249,7 @@ local function AddDropdown(host, cfg)
 			pcall(function() dd.ScrollConn:Disconnect() end)
 			dd.ScrollConn = nil
 		end
+		box.ZIndex = 1
 		Tween(chev, 0.25, { Rotation = 0 }, Enum.EasingStyle.Quart)
 		Tween(ddStroke, 0.25, { Color = COLORS.Stroke })
 		if dd.Handle then
@@ -2364,13 +2365,24 @@ local function AddDropdown(host, cfg)
 					local above = abs.Y - popH - S(6)
 					y = (above > cAbs.Y + S(10)) and above or math.max(cAbs.Y + S(10), math.min(y, cAbs.Y + cSize.Y - popH - S(10)))
 				end
-				pop.Position = UDim2.fromOffset(math.max(x, cAbs.X + S(10)), y)
+				-- follow отключён: попап живёт внутри строки и двигается сам
 			end
 		end)
 			if isMulti then return selSet[o] == true end
 			return o == sel
 		end)
 
+		pcall(function()
+			local ps = row:FindFirstAncestorOfClass("ScrollingFrame")
+			if ps then
+				local relY = box.AbsolutePosition.Y - ps.AbsolutePosition.Y
+				local spaceBelow = ps.AbsoluteWindowSize.Y - relY - box.AbsoluteSize.Y
+				if dd.Handle.Popup.AbsoluteSize.Y > spaceBelow - S(10) then
+					dd.Handle.Popup.Position = UDim2.new(0, 0, 0, -dd.Handle.Popup.AbsoluteSize.Y / SCALE - S(6))
+				end
+			end
+		end)
+		box.ZIndex = 80
 		Tween(chev, 0.25, { Rotation = 180 }, Enum.EasingStyle.Quart)
 		Tween(ddStroke, 0.25, { Color = Theme.Accent })
 		UpdateLabel()
@@ -2529,8 +2541,9 @@ local function CreateBlock(tab, name)
 		ZIndex                 = 3,
 		Parent                 = header,
 	})
-	local body = New("Frame", {
+	local body = New("CanvasGroup", {
 		Name             = "Body",
+		GroupTransparency      = 0,
 		BackgroundColor3 = COLORS.Background,
 		BorderSizePixel  = 0,
 		Position         = UDim2.new(0, 0, 0, headerH + S(6)),
@@ -2559,11 +2572,14 @@ local function CreateBlock(tab, name)
 		Tween(chev, 0.3, { Rotation = open and 180 or 0 }, Enum.EasingStyle.Quart)
 		if open then
 			body.Visible = true
+			body.GroupTransparency = 1
 			Tween(root, 0.32, { Size = UDim2.new(1, 0, 0, headerH + S(6) + ContentH()) })
+			Tween(body, 0.28, { GroupTransparency = 0 })
 		else
 			Tween(root, 0.26, { Size = UDim2.new(1, 0, 0, headerH) },
 				Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-			task.delay(0.27, function()
+			Tween(body, 0.22, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			task.delay(0.24, function()
 				if not block.Open then body.Visible = false end
 			end)
 		end
