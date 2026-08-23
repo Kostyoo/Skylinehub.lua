@@ -1052,6 +1052,33 @@ for i, def in ipairs(NAV_DEFS) do
 		Parent                 = Nav,
 	})
 	navIconParts[i] = select(2, BuildIcon(def.Name, b))
+	local tip = New("TextLabel", {
+		Name                   = "Tip",
+		BackgroundColor3       = COLORS.Background,
+		BackgroundTransparency = 1,
+		BorderSizePixel        = 0,
+		Position               = UDim2.new(0, navW + S(10), 0, BtnY(i) + math.floor((navBtnH - S(26)) / 2)),
+		Size                   = UDim2.fromOffset(S(96), S(26)),
+		Font                   = FONT_MED,
+		Text                   = def.Name,
+		TextColor3             = COLORS.Text,
+		TextSize               = S(12),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		Visible                = false,
+		ZIndex                 = 10,
+		Parent                 = Nav,
+	})
+	Corner(tip, S(7))
+	StrokeOf(tip)
+	Bind(b.MouseEnter, function()
+		if Hidden or BusyUI then return end
+		tip.Visible = true
+		Tween(tip, 0.15, { BackgroundTransparency = 0 })
+	end)
+	Bind(b.MouseLeave, function()
+		Tween(tip, 0.15, { BackgroundTransparency = 1 })
+		task.delay(0.16, function() pcall(function() tip.Visible = false end) end)
+	end)
 	Bind(b.MouseEnter, function()
 		if Hidden or BusyUI then return end
 		Tween(navHL, 0.22,
@@ -1132,6 +1159,18 @@ local ContentCanvas = New("CanvasGroup", {
 })
 local ContentScale = New("UIScale", { Scale = 1, Parent = ContentCanvas })
 
+local Shadow = New("Frame", {
+	Name             = "Shadow",
+	BackgroundColor3 = C(10, 16, 26),
+	BackgroundTransparency = 0.55,
+	BorderSizePixel  = 0,
+	AnchorPoint      = Vector2.new(0.5, 0.5),
+	Position         = UDim2.fromScale(0.5, 0.5),
+	Size             = UDim2.new(1, S(26), 1, S(26)),
+	ZIndex           = 1,
+	Parent           = ContentCanvas,
+})
+Corner(Shadow, S(20))
 local Content = New("Frame", {
 	Name             = "Window",
 	BackgroundColor3 = COLORS.Background,
@@ -1139,6 +1178,7 @@ local Content = New("Frame", {
 	AnchorPoint      = Vector2.new(0.5, 0.5),
 	Position         = UDim2.fromScale(0.5, 0.5),
 	Size             = UDim2.fromOffset(contentW, contentH),
+	ZIndex           = 2,
 	Parent           = ContentCanvas,
 })
 Corner(Content, S(14))
@@ -1898,7 +1938,16 @@ Bind(UserInputService.InputBegan, function(input)
 		local ps = dd.Handle.Popup.AbsoluteSize
 		inPop = m.X >= pp.X and m.X <= pp.X + ps.X and m.Y >= pp.Y and m.Y <= pp.Y + ps.Y
 	end
-	if not inBox and not inPop then
+	if inBox then
+		if dd.open then dd.Close() else dd.Open() end
+		return
+	end
+	if inPop then return end
+	CloseOpenDropdown()
+end)
+
+Bind(UserInputService.InputBegan, function(input)
+	if input.KeyCode == Enum.KeyCode.Escape then
 		CloseOpenDropdown()
 	end
 end)
@@ -2224,7 +2273,7 @@ local function AddDropdown(host, cfg)
 	end
 
 	function dd.Open()
-		if dd.open then pcall(dd.Close) return end
+		if dd.open then return end
 		CloseOpenDropdown()
 
 		if cfg.RefreshOptions then
@@ -2301,7 +2350,21 @@ local function AddDropdown(host, cfg)
 		dd.ScrollConn = Bind(RunService.Heartbeat, function()
 			if dd.open and dd.Handle and dd.Handle.Popup.Parent then
 				local abs = box.AbsolutePosition
-				dd.Handle.Popup.Position = UDim2.fromOffset(abs.X, abs.Y + box.AbsoluteSize.Y + S(6))
+				local cAbs = Content.AbsolutePosition
+				local cSize = Content.AbsoluteSize
+				if abs.Y < cAbs.Y - box.AbsoluteSize.Y or abs.Y > cAbs.Y + cSize.Y then
+					pcall(dd.Close)
+					return
+				end
+				local pop = dd.Handle.Popup
+				local popW, popH = pop.AbsoluteSize.X, pop.AbsoluteSize.Y
+				local x = math.min(abs.X, cAbs.X + cSize.X - popW - S(10))
+				local y = abs.Y + box.AbsoluteSize.Y + S(6)
+				if y + popH > cAbs.Y + cSize.Y - S(10) then
+					local above = abs.Y - popH - S(6)
+					y = (above > cAbs.Y + S(10)) and above or math.max(cAbs.Y + S(10), math.min(y, cAbs.Y + cSize.Y - popH - S(10)))
+				end
+				pop.Position = UDim2.fromOffset(math.max(x, cAbs.X + S(10)), y)
 			end
 		end)
 			if isMulti then return selSet[o] == true end
@@ -2314,7 +2377,7 @@ local function AddDropdown(host, cfg)
 	end
 
 	Bind(row.Activated, function()
-		if dd.open then dd.Close() else dd.Open() end
+		if not dd.open then dd.Open() end
 	end)
 
 	local regEntry = { Close = dd.Close }
@@ -2658,14 +2721,17 @@ EnsurePanel = function(tab)
 		end)
 		Bind(it.Activated, function()
 			if Hidden or BusyUI then return end
-			b.Set(true)
+			local wasOpen = b.Open
+			b.Set(not wasOpen)
 			committed = i
 			MoveHL(i, true)
+			if not wasOpen then
 			pcall(function()
 				local scroll = tab.Scroll
 				local target = b.Frame.AbsolutePosition.Y - scroll.AbsolutePosition.Y + scroll.CanvasPosition.Y - S(16)
 				Tween(scroll, 0.35, { CanvasPosition = Vector2.new(0, math.max(target, 0)) }, Enum.EasingStyle.Quint)
 			end)
+			end
 		end)
 		items[i] = { Btn = it, Dot = dot, Lbl = lbl }
 	end
