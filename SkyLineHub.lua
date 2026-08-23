@@ -1293,12 +1293,12 @@ local function CreatePage(def, index)
 			ScrollBarImageTransparency = 0.35,
 			Parent                 = page,
 		})
- layout = ListLayout(host, S(8))
-(host, S(14), S(12), S(14), S(14))
-("AbsoluteContentSize"):Connect(function()
-.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + S(26))
-)
-.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + S(26))
+		local layout = ListLayout(host, S(8))
+		Pad(host, S(14), S(12), S(14), S(14))
+		layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+			host.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + S(26))
+		end)
+		host.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + S(26))
 	end
 	local tab = {
 		Name = def.Name, Order = index,
@@ -2790,7 +2790,6 @@ do
 				initials.Text = ""
 			end
 		end)
-	end)
 	end)
 
 	New("TextLabel", {
