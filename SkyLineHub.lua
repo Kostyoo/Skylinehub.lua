@@ -869,6 +869,7 @@ local EnsurePanel
 
 local CloseAllDD = function() end
 local Hidden = true
+local BootedOnce = false
 local BusyUI = false
 
 
@@ -1222,6 +1223,7 @@ local ArrowBtn = New("TextButton", {
 	Size             = UDim2.fromOffset(S(30), S(58)),
 	Text             = "",
 	AutoButtonColor  = false,
+	Visible          = false,
 	ZIndex           = 60,
 	Parent           = ScreenGui,
 })
@@ -1243,7 +1245,7 @@ local ArrowLbl = New("TextLabel", {
 })
 
 Bind(ArrowBtn.Activated, function()
-	if BusyUI then return end
+	if BusyUI or not BootedOnce then return end
 	if type(ShowInterface) ~= "function" or type(HideInterface) ~= "function" then
 		warn("[SkyLine Hub] интерфейс ещё не инициализирован")
 		return
@@ -1648,7 +1650,11 @@ local function AttachSliderLogic(parts, st, onValue)
 		local frac = range > 0 and (v - st.Min) / range or 0
 		fill.Size = UDim2.new(frac, 0, 1, 0)
 		chip.Position = UDim2.new(frac, 0, 0.5, 0)
-		chipLbl.Text = tostring(v) .. (st.Suffix ~= "" and (" " .. st.Suffix) or "")
+		local shownTxt = v
+		if math.abs(v - floor(v)) > 1e-6 then
+			shownTxt = tonumber(string.format("%.2f", v))
+		end
+		chipLbl.Text = tostring(shownTxt) .. (st.Suffix ~= "" and (" " .. st.Suffix) or "")
 		if fire then SafeCall(onValue, v) end
 	end
 
@@ -3314,12 +3320,14 @@ ShowInterface = function()
 	if not Hidden or BusyUI then return end
 	BusyUI = true
 	Hidden = false
+	BootedOnce = true
 	task.delay(0.85, function() BusyUI = false end)
 	local okShow, errShow = pcall(function()
 
 	pcall(CloseAllDD)
 
 	WindowLayer.Visible = true
+	ArrowBtn.Visible = true
 
 	NavCanvas.GroupTransparency = 1
 	Nav.Position = UDim2.new(0, NAV_HIDDEN_X, 0.5, 0)
@@ -3393,7 +3401,7 @@ Tabs[1].Page.Visible = true
 
 -- страховка: если цепочка загрузки где-то упала — принудительно показать UI
 task.delay(6, function()
-	if Hidden and not BusyUI then
+	if (not BootedOnce) and Hidden and not BusyUI then
 		pcall(function() ShowInterface() end)
 	end
 end)
@@ -3401,6 +3409,7 @@ end)
 
 -- [35] LOADING SCREEN -------------------------------------------------
 local function RunLoading()
+	WindowLayer.Visible = false -- окно показывается только после загрузки
 	local LoadingLayer = New("CanvasGroup", {
 		Name                   = "LoadingLayer",
 		BackgroundTransparency = 1,
@@ -3608,34 +3617,151 @@ print("[SkyLine Hub] v" .. Library.Version .. " loaded")
 
 return Library
 
---[[ ═══════════════════ ПРИМЕР ИСПОЛЬЗОВАНИЯ ═══════════════════
+--[[ ═══════════════════ SKYLINE HUB • ПОЛНЫЙ ПРИМЕР API ═══════════════════
 
-local SkyLine = loadstring(game:HttpGet("https://ваш-url/SkyLineHub.lua"))()
--- или локально: local SkyLine = loadstring(readfile("SkyLineHub.lua"))()
+-- 1) Подключение -----------------------------------------------------------
+local SkyLine = loadstring(game:HttpGet("https://your-url/SkyLineHub.lua"))()
+-- локально:  local SkyLine = loadstring(readfile("SkyLineHub.lua"))()
 
-local Win = SkyLine.Window
+local Win  = SkyLine.Window   -- главное окно (создаётся автоматически)
+local Tabs = Win.Tabs         -- { Home, Main, Player, LoadScript, Settings }
+local Main = Tabs.Main
 
--- элементы на вкладке Main:
-Win.Tabs.Main:AddToggle({
-	Title = "My Feature", Default = false, Flag = "MyFeature",
-	Callback = function(v) print("state:", v) end,
+-- 2) Toggle -----------------------------------------------------------------
+Main:AddToggle({
+	Title    = "My Toggle",
+	Default  = false,
+	Flag     = "MyToggle",            -- имя для автосохранения в пресет
+	Callback = function(state)
+		print("toggle:", state)
+	end,
 })
 
--- блок-секция со вложенными элементами:
-local MyBlock = Win.Tabs.Main:AddBlock("My Section")
-MyBlock:AddSlider({ Title = "Value", Min = 0, Max = 100, Default = 50 })
-MyBlock:AddDropdown({ Title = "Mode", Options = {"A","B"}, Callback = print })
+-- 3) Button (+ Danger-вариант) ----------------------------------------------
+Main:AddButton({
+	Title    = "Action",
+	Callback = function()
+		print("clicked!")
+	end,
+})
+Tabs.Settings:AddButton({
+	Title    = "Panic",
+	Danger   = true,
+	Callback = function()
+		SkyLine:Destroy()             -- полный cleanup интерфейса
+	end,
+})
 
--- кнопка запуска скрипта (вкладка LoadScript):
-SkyLine.Window:AddScriptButton({ Title = "My Script", Callback = function()
-	print("running my script")
-end })
+-- 4) Label -------------------------------------------------------------------
+Main:AddLabel({ Text = "Обычная строка" })
+Main:AddLabel({ Text = "Крупный текст", Bold = true, Size = 14 })
 
--- пресеты / темы / прочее:
-SkyLine:SavePreset("my-config")
-SkyLine:LoadPreset("my-config")
-SkyLine:SetTheme("Indigo Night")
-SkyLine.Notify("Hi", "from API")
-SkyLine.Window.Toggle()
+-- 5) Slider ------------------------------------------------------------------
+Main:AddSlider({
+	Title     = "Volume",
+	Min       = 0,
+	Max       = 100,
+	Default   = 50,
+	Increment = 1,                    -- шаг
+	Suffix    = "%",
+	Flag      = "MySlider",
+	Callback  = function(v)
+		print("slider:", v)           -- число едет вместе с бегунком
+	end,
+})
 
+-- 5b) Slider со встроенным переключателем (общий фон) ------------------------
+Main:AddSlider({
+	Title       = "Field Of View",
+	Min         = 60,
+	Max         = 120,
+	Default     = 70,
+	WithToggle  = true,
+	ToggleTitle = "Enable FOV",
+	Flag        = "FovValue",
+	ToggleFlag  = "FovEnabled",
+	OnToggle    = function(on)
+		print("fov on:", on)
+	end,
+	Callback    = function(v)
+		print("fov:", v)
+	end,
+})
+
+-- 6) Dropdown — одинарный выбор -----------------------------------------------
+Main:AddDropdown({
+	Title    = "Quality",
+	Options  = { "Low", "Medium", "High" },
+	Default  = "Medium",
+	Flag     = "Quality",
+	Callback = function(sel)
+		print("quality:", sel)
+	end,
+})
+
+-- 7) Dropdown — мультивыбор (чекбоксы + Select All / Clear) --------------------
+local espDD = Main:AddDropdown({
+	Title    = "ESP Filters",
+	Options  = { "Players", "NPCs", "Animals", "Vehicles" },
+	Default  = { "Players" },
+	Multi    = true,
+	Flag     = "EspFilters",
+	Callback = function(list)
+		print("selected:", table.concat(list, ", "))
+	end,
+})
+
+-- программное управление дропдауном:
+espDD.Refresh({ "A", "B", "C" })      -- заменить список опций
+espDD.Set({ "A", "C" })               -- установить выбор таблицей
+print(espDD.Get())                    -- -> { "A", "C" }
+
+-- 8) Block — сворачиваемая секция (стрелка вниз, содержимое выезжает) ----------
+local Combat = Main:AddBlock("Combat")
+Combat.AddToggle({ Title = "Aim Assist", Flag = "AA" })
+Combat.AddSlider({ Title = "Smoothness", Min = 1, Max = 10, Default = 3 })
+Combat.AddDropdown({ Title = "Target Part", Options = { "Head", "Torso" } })
+Combat.Set(true)                      -- открыть программно
+print(Combat.Get())                   -- состояние откры/закрыт
+-- правая панель блоков появляется сама, когда блоков больше одного
+
+-- 9) ScriptButton — кнопка запуска скрипта (вкладка LoadScript) ----------------
+Win.AddScriptButton({
+	Title    = "My Script",
+	Callback = function()
+		print("running my script...")
+	end,
+})
+
+-- 10) Темы ---------------------------------------------------------------------
+SkyLine.SetTheme("Indigo Night")      -- Ocean | Indigo Night | Emerald | Crimson
+for name in pairs(SkyLine.Themes) do
+	print("тема:", name)
+end
+
+-- 11) Пресеты ------------------------------------------------------------------
+SkyLine.SavePreset("my-config")       -- сохранить все Flag'и в файл
+SkyLine.LoadPreset("my-config")       -- загрузить
+for _, name in ipairs(SkyLine.GetPresets()) do
+	print("пресет:", name)
+end
+-- Auto Save (Settings): каждое изменение Flag сохраняется в "_autosave"
+-- и автоматически подхватывается при следующем запуске.
+
+-- 12) Уведомления ----------------------------------------------------------------
+SkyLine.Notify("Заголовок", "Текст уведомления", 3)
+
+-- 13) Окно ------------------------------------------------------------------------
+Win.Toggle()                          -- показать/скрыть (как стрелочка)
+Win.Hide()
+task.wait(1)
+Win.Show()
+Win.GetTab("Player").AddLabel({ Text = "добавлено на лету" })
+
+-- 14) Флаги напрямую ----------------------------------------------------------------
+SkyLine.Flags.MyToggle.Set(true)      -- программно включить элемент
+print(SkyLine.Flags.MyToggle.Get())   -- текущее состояние
+
+-- 15) Destroy -----------------------------------------------------------------------
+-- SkyLine:Destroy()                  -- отключить все соединения/циклы и убрать GUI
 ================================================================ ]]
