@@ -1,6 +1,6 @@
 --[[
 	═════════════════════════════════════════════════════════
-	  SKYLINE HUB • UI Library v1.0 • Pure Lua • No deps
+	  SKYLINE HUB • UI Library v1.1 • Pure Lua • No deps
 	  KRNL / Synapse / Fluxus / Wave / Delta compatible
 	═════════════════════════════════════════════════════════
 ]]
@@ -151,7 +151,7 @@ local function Measure(text, size, font)
 	return #tostring(text) * size * 0.58
 end
 
--- [6] CONNECTION HUB / THREADS / TWEEN --------------------------------
+-- [6] CONNECTIONS / THREADS / TWEEN -----------------------------------
 local Conns = {}
 local function Bind(signal, fn)
 	local ok, conn = pcall(function() return signal:Connect(fn) end)
@@ -217,8 +217,8 @@ local function BindTheme(obj, prop, kind)
 	Insert(ThemeBinds, { obj = obj, prop = prop, kind = kind })
 end
 
-local GradientBinds   = {} -- UIGradient (заливка слайдеров)
-local ToggleRenderers = {} -- fn() перерисовка тумблеров при смене темы
+local GradientBinds   = {}
+local ToggleRenderers = {}
 
 local function ApplyTheme(name)
 	local th = THEMES[name]
@@ -329,7 +329,6 @@ Bind(RunService.Heartbeat, function(dt)
 	end
 end)
 
--- свечение проявляется сразу и живёт вечно (независимо от загрузки)
 task.delay(0.8, function()
 	for i, e in ipairs(GlowEdges) do
 		task.delay(i * 0.08, function()
@@ -485,6 +484,7 @@ end
 local function EnsureFolder()
 	if type(makefolder) == "function" then pcall(makefolder, FOLDER) end
 end
+
 
 
 -- [11] FLAGS / PERSISTENCE --------------------------------------------
@@ -689,6 +689,7 @@ local function RequestInput(titleText, placeholderText, onSubmit, onCancel)
 end
 
 
+
 -- [13] PLAYER FEATURES ------------------------------------------------
 local Features = {
 	Speed   = { On = false, Value = 16 },
@@ -874,6 +875,7 @@ local BootedOnce = false
 local BusyUI = false
 
 
+
 -- [15] NAV BAR (боковая панель) ---------------------------------------
 -- Иконки рисуются примитивами (Frame), внешние ассеты не требуются.
 local NAV_DEFS = {
@@ -884,8 +886,6 @@ local NAV_DEFS = {
 	{ Name = "Settings" },
 }
 
--- Рисует векторную иконку из Frame-примитивов внутри holder (26x26 design px).
--- Возвращает canvas и список окрашиваемых частей.
 local function BuildIcon(kind, holder)
 	local s = S(26)
 	local canvas = New("Frame", {
@@ -923,10 +923,9 @@ local function BuildIcon(kind, holder)
 	end
 
 	if kind == "Home" then
-		P(0, 3, 15, 10)                    -- корпус
-		P(-5, -4, 11, 2.5, true, 45)       -- крыша левая
-		P(5, -4, 11, 2.5, true, -45)       -- крыша правая
-		-- дверной вырез (цвет фона панели, не перекрашивается)
+		P(0, 3, 15, 10)
+		P(-5, -4, 11, 2.5, true, 45)
+		P(5, -4, 11, 2.5, true, -45)
 		local door = New("Frame", {
 			Name                   = "Door",
 			BackgroundColor3       = COLORS.Background,
@@ -945,12 +944,12 @@ local function BuildIcon(kind, holder)
 		P(-6, 6, 9, 9)
 		P(6, 6, 9, 9)
 	elseif kind == "Player" then
-		P(0, -5, 9, 9, true)               -- голова
-		P(0, 7, 15, 7, true)               -- плечи
+		P(0, -5, 9, 9, true)
+		P(0, 7, 15, 7, true)
 	elseif kind == "LoadScript" then
-		P(-3, -3, 11, 2.5, true, 45)       -- шеврон ">" верх
-		P(-3, 3, 11, 2.5, true, -45)       -- шеврон ">" низ
-		P(4, 8, 9, 2.5, true, 0)           -- курсор
+		P(-3, -3, 11, 2.5, true, 45)
+		P(-3, 3, 11, 2.5, true, -45)
+		P(4, 8, 9, 2.5, true, 0)
 	elseif kind == "Settings" then
 		for i, yy in ipairs({ -7, 0, 7 }) do
 			P(0, yy, 17, 2.5, true, 0)
@@ -1111,13 +1110,13 @@ end)
 CommitNav(1)
 
 
+
 -- [16] CONTENT WINDOW -------------------------------------------------
 local vp = Vector2.new(1920, 1080)
 pcall(function()
 	if Camera then vp = Camera.ViewportSize end
 end)
 
--- окно центрируется по экрану; навигационная панель остаётся слева
 local navRight = S(18) + navW + S(12)
 local contentW = math.max(S(360),
 	math.min(S(640), math.min(vp.X - S(48), vp.X - navRight * 2 - S(28))))
@@ -1345,15 +1344,14 @@ SelectTab = function(idx)
 	local oldT = Tabs[ActiveIdx]
 	local newT = Tabs[idx]
 	ActiveIdx = idx
+	pcall(CloseAllDD)
 	UpdateTitle(newT.Name)
 	CommitNav(idx)
-	-- новая вкладка выше в панели → старая уходит ВНИЗ, новая появляется СВЕРХУ
 	local down = idx < oldT.Order
 	local off = S(46)
-	local outD = 0.26   -- старая уходит первой
-	local inD = 0.34    -- новая въезжает следом
+	local outD = 0.26
+	local inD = 0.34
 
-	-- фаза 1: старая вкладка плавно уезжает вверх/вниз и тает
 	oldT.Page.Visible = true
 	Tween(oldT.PageScale, outD, { Scale = 0.93 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 	Tween(oldT.Page, outD,
@@ -1363,7 +1361,6 @@ SelectTab = function(idx)
 
 	if oldT.Panel then pcall(oldT.Panel.Hide) end
 
-	-- фаза 2: новая появляется с противоположной стороны
 	task.delay(outD * 0.62, function()
 		if ActiveIdx ~= idx then return end
 		newT.Page.Visible = true
@@ -1390,6 +1387,7 @@ SelectTab = function(idx)
 		oldT.PageScale.Scale = 1
 	end)
 end
+
 
 
 -- [20] ELEMENT FACTORIES ----------------------------------------------
@@ -1563,7 +1561,6 @@ end
 
 
 -- [21] SLIDER CORE ----------------------------------------------------
--- Возвращает компоненты полосы слайдера внутри контейнера cont.
 local function BuildSliderBar(cont, barY)
 	local barW = S(170)
 	local barH = S(10)
@@ -1634,7 +1631,6 @@ local function BuildSliderBar(cont, barY)
 	return { Label = label, Bar = bar, Fill = fill, Grad = grad, Chip = chip, ChipLbl = chipLbl }
 end
 
--- Логика перетаскивания и значения слайдера.
 local function AttachSliderLogic(parts, st, onValue)
 	local fill, bar, chip, chipLbl =
 		parts.Fill, parts.Bar, parts.Chip, parts.ChipLbl
@@ -1872,6 +1868,7 @@ local function AddSlider(host, cfg)
 end
 
 
+
 -- [23] DROPDOWN (single + multi select) -------------------------------
 local OpenDDRef = nil
 
@@ -1966,7 +1963,7 @@ local function BuildDropdownPopup(box, opts, state)
 				BackgroundTransparency = 1,
 				BorderSizePixel        = 0,
 				AnchorPoint            = Vector2.new(0, 0.5),
-				Position               = UDim2.fromOffset(S(10), 0.5),
+				Position               = UDim2.new(0, S(10), 0.5, 0),
 				Size                   = UDim2.fromOffset(S(15), S(15)),
 				ZIndex                 = 123,
 				Parent                 = it,
@@ -1984,6 +1981,7 @@ local function BuildDropdownPopup(box, opts, state)
 			TextColor3             = state.IsSel(opt) and Theme.Accent or COLORS.Text,
 			TextSize               = S(12),
 			TextXAlignment         = Enum.TextXAlignment.Left,
+			TextYAlignment         = Enum.TextYAlignment.Center,
 			TextTruncate           = Enum.TextTruncate.AtEnd,
 			ZIndex                 = 123,
 			Parent                 = it,
@@ -2027,7 +2025,7 @@ local function BuildDropdownPopup(box, opts, state)
 				AutoButtonColor        = false,
 				AnchorPoint            = Vector2.new(xAnchor, 0.5),
 				Position               = UDim2.new(xAnchor, xOff, 0.5, 0),
-				Size                   = UDim2.fromOffset(S(96), S(22)),
+				Size                   = UDim2.new(0.5, -S(8), 1, -S(4)),
 				ZIndex                 = 125,
 				Parent                 = foot,
 			})
@@ -2043,11 +2041,11 @@ local function BuildDropdownPopup(box, opts, state)
 			end)
 			return b
 		end
-		mkBtn("Select All", 0, S(8), state.OnAll)
-		mkBtn("Clear", 1, -S(8), state.OnClear)
+		mkBtn("Select All", 0, S(4), state.OnAll)
+		mkBtn("Clear", 1, -S(4), state.OnClear)
 	end
 
-	return { Popup = popup, Items = items }
+	return { Popup = popup, Items = items, Scroll = scroll }
 end
 
 local function RestyleItems(handle, isSelFn)
@@ -2076,8 +2074,8 @@ local function AddDropdown(host, cfg)
 		end
 	end
 
-	local sel = nil          -- single: строка
-	local selSet = {}        -- multi: [value]=true
+	local sel = nil
+	local selSet = {}
 	local selCount = 0
 
 	if isMulti then
@@ -2163,7 +2161,7 @@ local function AddDropdown(host, cfg)
 		Parent                 = box,
 	})
 
-	local dd = { Box = box, Handle = nil, open = false }
+	local dd = { Box = box, Handle = nil, ScrollConn = nil, open = false }
 
 	local function UpdateLabel()
 		if isMulti then
@@ -2195,6 +2193,10 @@ local function AddDropdown(host, cfg)
 		if not dd.open then return end
 		dd.open = false
 		if OpenDDRef == dd then OpenDDRef = nil end
+		if dd.ScrollConn then
+			pcall(function() dd.ScrollConn:Disconnect() end)
+			dd.ScrollConn = nil
+		end
 		Tween(chev, 0.25, { Rotation = 0 }, Enum.EasingStyle.Quart)
 		Tween(ddStroke, 0.25, { Color = COLORS.Stroke })
 		if dd.Handle then
@@ -2292,6 +2294,14 @@ local function AddDropdown(host, cfg)
 			end,
 		})
 
+		-- попап следует за списком при его прокрутке
+		dd.ScrollConn = Bind(dd.Handle.Scroll:GetPropertyChangedSignal("CanvasPosition"), function()
+			if dd.open and dd.Handle then
+				local abs = box.AbsolutePosition
+				dd.Handle.Popup.Position = UDim2.fromOffset(abs.X, abs.Y + box.AbsoluteSize.Y + S(6))
+			end
+		end)
+
 		RestyleItems(dd.Handle, function(o)
 			if isMulti then return selSet[o] == true end
 			return o == sel
@@ -2371,6 +2381,9 @@ local function AddDropdown(host, cfg)
 	UpdateLabel()
 	return ctrl
 end
+
+
+
 -- [24] SCRIPT BUTTON (стрелка вправо, не раскрывается) ----------------
 local function AddScriptRow(host, cfg)
 	cfg = cfg or {}
@@ -2469,7 +2482,7 @@ local function CreateBlock(tab, name)
 	ListLayout(body, S(8))
 	Pad(body, S(10), S(10), S(10), S(12))
 
-	local block = { Name = name, Open = false, Heights = {} }
+	local block = { Name = name, Open = false, Heights = {}, Frame = root }
 
 	local function ContentH()
 		local sum = S(22)
@@ -2619,7 +2632,7 @@ EnsurePanel = function(tab)
 			BackgroundTransparency = 0,
 			BorderSizePixel        = 0,
 			AnchorPoint            = Vector2.new(0, 0.5),
-			Position               = UDim2.fromOffset(S(9), 0.5),
+			Position               = UDim2.new(0, S(9), 0.5, 0),
 			Size                   = UDim2.fromOffset(S(6), S(6)),
 			Visible                = false,
 			ZIndex                 = 3,
@@ -2647,9 +2660,19 @@ EnsurePanel = function(tab)
 		end)
 		Bind(it.Activated, function()
 			if Hidden or BusyUI then return end
-			b.Toggle()
+			b.Set(true)
 			committed = i
 			MoveHL(i, true)
+			-- перематываем страницу к нужному блоку
+			pcall(function()
+				local scroll = tab.Scroll
+				local target = b.Frame.AbsolutePosition.Y
+					- scroll.AbsolutePosition.Y
+					+ scroll.CanvasPosition.Y
+					- S(16)
+				Tween(scroll, 0.35, { CanvasPosition = Vector2.new(0, math.max(target, 0)) },
+					Enum.EasingStyle.Quint)
+			end)
 		end)
 		items[i] = { Btn = it, Dot = dot, Lbl = lbl }
 	end
@@ -2664,8 +2687,8 @@ EnsurePanel = function(tab)
 		local lastOpen = nil
 		for i, b in ipairs(blocks) do
 			local isOpen = b.Open == true
-		items[i].Dot.Visible = isOpen
-		items[i].Lbl.TextColor3 = isOpen and COLORS.Text or COLORS.SubText
+			items[i].Dot.Visible = isOpen
+			items[i].Lbl.TextColor3 = isOpen and COLORS.Text or COLORS.SubText
 			if isOpen then lastOpen = i end
 		end
 		if lastOpen then
@@ -2692,6 +2715,7 @@ EnsurePanel = function(tab)
 		task.delay(0.35, function() pcall(function() tab.Panel.Show() end) end)
 	end
 end
+
 
 
 -- [27] TAB API --------------------------------------------------------
@@ -2868,14 +2892,13 @@ do
 		end
 	end)
 
-
 	local pingRow = InfoRow(S(67), "Ping")
 	New("Frame", {
 		Name             = "Dot",
 		BackgroundColor3 = C(120, 220, 140),
 		BorderSizePixel  = 0,
 		AnchorPoint      = Vector2.new(0, 0.5),
-		Position         = UDim2.fromOffset(S(2), 0.5),
+		Position         = UDim2.new(0, S(2), 0.5, 0),
 		Size             = UDim2.fromOffset(S(6), S(6)),
 		Parent           = pingRow,
 	})
@@ -2909,7 +2932,7 @@ do
 		BackgroundColor3 = COLORS.Accent,
 		BorderSizePixel  = 0,
 		AnchorPoint      = Vector2.new(0, 0.5),
-		Position         = UDim2.fromOffset(S(2), 0.5),
+		Position         = UDim2.new(0, S(2), 0.5, 0),
 		Size             = UDim2.fromOffset(S(6), S(6)),
 		Parent           = fpsRow,
 	})
@@ -2955,6 +2978,7 @@ do
 	end)
 	if not okSecH then warn("[SkyLine Hub] Home tab error:", errSecH) end
 end
+
 
 
 -- [29] MAIN TAB -------------------------------------------------------
@@ -3011,7 +3035,7 @@ do
 		end,
 	})
 
-		main:AddDropdown({
+	main:AddDropdown({
 		Title    = "Multi Select",
 		Options  = { "Apple", "Banana", "Cherry", "Dragon Fruit" },
 		Default  = { "Apple" },
@@ -3022,7 +3046,7 @@ do
 		end,
 	})
 
-main:AddButton({
+	main:AddButton({
 		Title    = "Test Notification",
 		Callback = function()
 			Notify("SkyLine Hub", "Hello from the Main tab!")
@@ -3314,6 +3338,7 @@ do
 end
 
 
+
 -- [33] SHOW / HIDE CHOREOGRAPHY ---------------------------------------
 local NAV_HIDDEN_X = -(navW + S(46))
 
@@ -3338,7 +3363,6 @@ ShowInterface = function()
 	Content.Position = UDim2.new(0.5, 0, 0.5, S(22))
 	ContentScale.Scale = 0.95
 
-	-- плавно проявляем амбиент (затемнение + северное сияние)
 	Tween(AmbientDim, 0.7, { BackgroundTransparency = 0.38 })
 	for _, e in ipairs(GlowEdges) do
 		Tween(e.Frame, 0.9, { BackgroundTransparency = e.Base })
@@ -3384,7 +3408,6 @@ HideInterface = function()
 		{ Position = UDim2.new(0.5, 0, 0.5, S(22)) },
 		Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 
-	-- плавно гасим амбиент вместе с меню
 	Tween(AmbientDim, 0.55, { BackgroundTransparency = 1 })
 	for _, e in ipairs(GlowEdges) do
 		Tween(e.Frame, 0.55, { BackgroundTransparency = 1 })
@@ -3400,7 +3423,6 @@ end
 -- [34] INITIAL TAB VISIBILITY -----------------------------------------
 Tabs[1].Page.Visible = true
 
--- страховка: если цепочка загрузки где-то упала — принудительно показать UI
 task.delay(6, function()
 	if (not BootedOnce) and Hidden and not BusyUI then
 		pcall(function() ShowInterface() end)
@@ -3410,7 +3432,7 @@ end)
 
 -- [35] LOADING SCREEN -------------------------------------------------
 local function RunLoading()
-	WindowLayer.Visible = false -- окно показывается только после загрузки
+	WindowLayer.Visible = false
 	local LoadingLayer = New("CanvasGroup", {
 		Name                   = "LoadingLayer",
 		BackgroundTransparency = 1,
@@ -3419,7 +3441,6 @@ local function RunLoading()
 		ZIndex                 = 200,
 		Parent                 = ScreenGui,
 	})
-	local loadingScale = New("UIScale", { Scale = 1, Parent = LoadingLayer })
 
 	local scrim = New("Frame", {
 		Name                   = "Scrim",
@@ -3444,8 +3465,6 @@ local function RunLoading()
 	StrokeOf(card)
 	local cardScale = New("UIScale", { Scale = 0.7, Parent = card })
 
-	local titleGrad = New("UIGradient",
-		{ Color = ColorSequence.new(COLORS.Text, Theme.Accent), Parent = nil })
 	local title = New("TextLabel", {
 		Name                   = "Title",
 		BackgroundTransparency = 1,
@@ -3458,7 +3477,10 @@ local function RunLoading()
 		TextColor3             = COLORS.Text,
 		Parent                 = card,
 	})
-	titleGrad.Parent = title
+	local titleGrad = New("UIGradient", {
+		Color  = ColorSequence.new(COLORS.Text, Theme.Accent),
+		Parent = title,
+	})
 
 	local status = New("TextLabel", {
 		Name                   = "Status",
@@ -3500,6 +3522,7 @@ local function RunLoading()
 
 	Tween(scrim, 0.5, { BackgroundTransparency = 0.35 })
 	Tween(LoadingLayer, 0.45, { GroupTransparency = 0 }, Enum.EasingStyle.Quad)
+	Tween(card, 0.5, { GroupTransparency = 0 }, Enum.EasingStyle.Quad)
 	Tween(cardScale, 0.55, { Scale = 1 }, Enum.EasingStyle.Back)
 
 	local statuses = { "Loading assets...", "Building interface...", "Injecting modules...", "Almost ready..." }
@@ -3554,10 +3577,11 @@ local function RunLoading()
 end
 
 
+
 -- [36] PUBLIC API -----------------------------------------------------
 Library = {}
 
-Library.Version = "1.0"
+Library.Version = "1.1"
 Library.Flags   = Flags
 Library.Themes  = THEMES
 
@@ -3624,33 +3648,27 @@ return Library
 local SkyLine = loadstring(game:HttpGet("https://your-url/SkyLineHub.lua"))()
 -- локально:  local SkyLine = loadstring(readfile("SkyLineHub.lua"))()
 
-local Win  = SkyLine.Window   -- главное окно (создаётся автоматически)
-local Tabs = Win.Tabs         -- { Home, Main, Player, LoadScript, Settings }
+local Win  = SkyLine.Window
+local Tabs = Win.Tabs            -- { Home, Main, Player, LoadScript, Settings }
 local Main = Tabs.Main
 
 -- 2) Toggle -----------------------------------------------------------------
 Main:AddToggle({
 	Title    = "My Toggle",
 	Default  = false,
-	Flag     = "MyToggle",            -- имя для автосохранения в пресет
-	Callback = function(state)
-		print("toggle:", state)
-	end,
+	Flag     = "MyToggle",
+	Callback = function(state) print("toggle:", state) end,
 })
 
 -- 3) Button (+ Danger-вариант) ----------------------------------------------
 Main:AddButton({
 	Title    = "Action",
-	Callback = function()
-		print("clicked!")
-	end,
+	Callback = function() print("clicked!") end,
 })
 Tabs.Settings:AddButton({
 	Title    = "Panic",
 	Danger   = true,
-	Callback = function()
-		SkyLine:Destroy()             -- полный cleanup интерфейса
-	end,
+	Callback = function() SkyLine:Destroy() end,
 })
 
 -- 4) Label -------------------------------------------------------------------
@@ -3660,33 +3678,23 @@ Main:AddLabel({ Text = "Крупный текст", Bold = true, Size = 14 })
 -- 5) Slider ------------------------------------------------------------------
 Main:AddSlider({
 	Title     = "Volume",
-	Min       = 0,
-	Max       = 100,
-	Default   = 50,
-	Increment = 1,                    -- шаг
+	Min       = 0, Max = 100, Default = 50,
+	Increment = 1,
 	Suffix    = "%",
 	Flag      = "MySlider",
-	Callback  = function(v)
-		print("slider:", v)           -- число едет вместе с бегунком
-	end,
+	Callback  = function(v) print("slider:", v) end,
 })
 
 -- 5b) Slider со встроенным переключателем (общий фон) ------------------------
 Main:AddSlider({
 	Title       = "Field Of View",
-	Min         = 60,
-	Max         = 120,
-	Default     = 70,
+	Min         = 60, Max = 120, Default = 70,
 	WithToggle  = true,
 	ToggleTitle = "Enable FOV",
 	Flag        = "FovValue",
 	ToggleFlag  = "FovEnabled",
-	OnToggle    = function(on)
-		print("fov on:", on)
-	end,
-	Callback    = function(v)
-		print("fov:", v)
-	end,
+	OnToggle    = function(on) print("fov on:", on) end,
+	Callback    = function(v) print("fov:", v) end,
 })
 
 -- 6) Dropdown — одинарный выбор -----------------------------------------------
@@ -3695,9 +3703,7 @@ Main:AddDropdown({
 	Options  = { "Low", "Medium", "High" },
 	Default  = "Medium",
 	Flag     = "Quality",
-	Callback = function(sel)
-		print("quality:", sel)
-	end,
+	Callback = function(sel) print("quality:", sel) end,
 })
 
 -- 7) Dropdown — мультивыбор (чекбоксы + Select All / Clear) --------------------
@@ -3707,62 +3713,49 @@ local espDD = Main:AddDropdown({
 	Default  = { "Players" },
 	Multi    = true,
 	Flag     = "EspFilters",
-	Callback = function(list)
-		print("selected:", table.concat(list, ", "))
-	end,
+	Callback = function(list) print("selected:", table.concat(list, ", ")) end,
 })
+espDD.Refresh({ "A", "B", "C" })   -- заменить список опций
+espDD.Set({ "A", "C" })            -- установить выбор таблицей
+print(espDD.Get())                 -- -> { "A", "C" }
 
--- программное управление дропдауном:
-espDD.Refresh({ "A", "B", "C" })      -- заменить список опций
-espDD.Set({ "A", "C" })               -- установить выбор таблицей
-print(espDD.Get())                    -- -> { "A", "C" }
-
--- 8) Block — сворачиваемая секция (стрелка вниз, содержимое выезжает) ----------
+-- 8) Block — секция; клик по правой панели перематывает страницу к блоку --------
 local Combat = Main:AddBlock("Combat")
 Combat.AddToggle({ Title = "Aim Assist", Flag = "AA" })
 Combat.AddSlider({ Title = "Smoothness", Min = 1, Max = 10, Default = 3 })
 Combat.AddDropdown({ Title = "Target Part", Options = { "Head", "Torso" } })
-Combat.Set(true)                      -- открыть программно
-print(Combat.Get())                   -- состояние откры/закрыт
--- правая панель блоков появляется сама, когда блоков больше одного
+Combat.Set(true)
+print(Combat.Get())
 
--- 9) ScriptButton — кнопка запуска скрипта (вкладка LoadScript) ----------------
-Win.AddScriptButton({
+-- 9) ScriptButton (вкладка LoadScript) ------------------------------------------
+Win:AddScriptButton({
 	Title    = "My Script",
-	Callback = function()
-		print("running my script...")
-	end,
+	Callback = function() print("running my script...") end,
 })
 
--- 10) Темы ---------------------------------------------------------------------
-SkyLine.SetTheme("Indigo Night")      -- Ocean | Indigo Night | Emerald | Crimson
-for name in pairs(SkyLine.Themes) do
-	print("тема:", name)
-end
+-- 10) Темы -----------------------------------------------------------------------
+SkyLine:SetTheme("Indigo Night")   -- Ocean | Indigo Night | Emerald | Crimson
+for name in pairs(SkyLine.Themes) do print("тема:", name) end
 
--- 11) Пресеты ------------------------------------------------------------------
-SkyLine.SavePreset("my-config")       -- сохранить все Flag'и в файл
-SkyLine.LoadPreset("my-config")       -- загрузить
-for _, name in ipairs(SkyLine.GetPresets()) do
-	print("пресет:", name)
-end
--- Auto Save (Settings): каждое изменение Flag сохраняется в "_autosave"
--- и автоматически подхватывается при следующем запуске.
+-- 11) Пресеты --------------------------------------------------------------------
+SkyLine:SavePreset("my-config")
+SkyLine:LoadPreset("my-config")
+for _, name in ipairs(SkyLine:GetPresets()) do print("пресет:", name) end
 
--- 12) Уведомления ----------------------------------------------------------------
+-- 12) Уведомления ------------------------------------------------------------------
 SkyLine.Notify("Заголовок", "Текст уведомления", 3)
 
--- 13) Окно ------------------------------------------------------------------------
-Win.Toggle()                          -- показать/скрыть (как стрелочка)
+-- 13) Окно --------------------------------------------------------------------------
+Win.Toggle()
 Win.Hide()
 task.wait(1)
 Win.Show()
-Win.GetTab("Player").AddLabel({ Text = "добавлено на лету" })
+Win:GetTab("Player"):AddLabel({ Text = "добавлено на лету" })
 
--- 14) Флаги напрямую ----------------------------------------------------------------
-SkyLine.Flags.MyToggle.Set(true)      -- программно включить элемент
-print(SkyLine.Flags.MyToggle.Get())   -- текущее состояние
+-- 14) Флаги напрямую ------------------------------------------------------------------
+SkyLine.Flags.MyToggle.Set(true)
+print(SkyLine.Flags.MyToggle.Get())
 
--- 15) Destroy -----------------------------------------------------------------------
--- SkyLine:Destroy()                  -- отключить все соединения/циклы и убрать GUI
+-- 15) Destroy -------------------------------------------------------------------------
+-- SkyLine:Destroy()
 ================================================================ ]]
