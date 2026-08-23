@@ -501,6 +501,7 @@ local function RegFlag(name, ctrl)
 		Flags[name] = ctrl
 	end
 end
+local RegisterFlag = RegFlag -- алиас (фабрики используют это имя)
 
 local function ScheduleAutoSave()
 	if not AutoSaveOn or LoadingFlags then return end
