@@ -1407,7 +1407,7 @@ local function CreatePage(def, index)
 		local function ApplyFilter(q)
 			q = string.lower(tostring(q or ""))
 			for _, child in ipairs(host:GetChildren()) do
-				if child:IsA("Frame") or child:IsA("TextButton") or child:IsA("CanvasGroup") then
+				if child ~= searchHolder and (child:IsA("Frame") or child:IsA("TextButton") or child:IsA("CanvasGroup")) then
 					local text = ""
 					for _, d in ipairs(child:GetDescendants()) do
 						if d:IsA("TextLabel") then text = text .. " " .. tostring(d.Text) end
@@ -2388,6 +2388,12 @@ local function AddDropdown(host, cfg)
 			dd.ScrollConn = nil
 		end
 		box.ZIndex = 1
+		if dd.ZSaved then
+			for savedNode, savedZ in pairs(dd.ZSaved) do
+				pcall(function() savedNode.ZIndex = savedZ end)
+			end
+		dd.ZSaved = nil
+		end
 		Tween(chev, 0.25, { Rotation = 0 }, Enum.EasingStyle.Quart)
 		Tween(ddStroke, 0.25, { Color = COLORS.Stroke })
 		if dd.Handle then
@@ -2521,6 +2527,19 @@ local function AddDropdown(host, cfg)
 			end
 		end)
 		box.ZIndex = 80
+		dd.ZSaved = nil
+		do
+			local saved = {}
+			local zn = row
+			while zn and zn ~= host do
+				if zn:IsA("GuiObject") then
+					saved[zn] = zn.ZIndex
+					zn.ZIndex = 80
+				end
+			zn = zn.Parent
+			end
+			dd.ZSaved = saved
+		end
 		Tween(chev, 0.25, { Rotation = 180 }, Enum.EasingStyle.Quart)
 		Tween(ddStroke, 0.25, { Color = Theme.Accent })
 		UpdateLabel()
@@ -3950,9 +3969,9 @@ local function RunLoading()
 		done = true
 		pcall(function() animConn:Disconnect() end)
 
-		Tween(card, 0.32, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		Tween(card, 0.22, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 		Tween(cardScale, 0.3, { Scale = 0.92 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-		Tween(LoadingLayer, 0.35, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		Tween(LoadingLayer, 0.25, { GroupTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 		Tween(scrim, 0.4, { BackgroundTransparency = 1 })
 
 		Tween(AmbientDim, 0.7, { BackgroundTransparency = 0.38 })
@@ -3964,8 +3983,8 @@ local function RunLoading()
 			end)
 		end
 
-		task.delay(0.4, function() pcall(function() LoadingLayer:Destroy() end) end)
-		task.delay(0.45, function() pcall(function() ShowInterface() end) end)
+		task.delay(0.3, function() pcall(function() LoadingLayer:Destroy() end) end)
+		task.delay(0.6, function() pcall(function() ShowInterface() end) end)
 		task.delay(1.6, function()
 			if FS.Exists(FOLDER .. "/_autosave.skyline") then
 				pcall(LoadPreset, "_autosave", true)
@@ -4188,3 +4207,4 @@ print(SkyLine.Flags.MyToggle.Get())   -- текущее состояние
 -- 15) Destroy -----------------------------------------------------------------------
 -- SkyLine:Destroy()                  -- отключить все соединения/циклы и убрать GUI
 ================================================================ ]]
+
