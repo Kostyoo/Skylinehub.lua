@@ -213,7 +213,6 @@ end
 -- [7] THEME REGISTRY --------------------------------------------------
 local ActiveESP   = nil
 local StaticGlow  = nil
-local ScreenGui
 
 local ThemeBinds = {}
 local function BindTheme(obj, prop, kind)
@@ -223,12 +222,8 @@ end
 local GradientBinds   = {} -- UIGradient (заливка слайдеров)
 local ToggleRenderers = {} -- fn() перерисовка тумблеров при смене темы
 
-local function ColorSame(a, b)
-	return typeof(a) == "Color3" and typeof(b) == "Color3"
-		and a.R == b.R and a.G == b.G and a.B == b.B
-end
-
 local function ApplyTheme(name)
+	local th = THEMES[name]
 	if name == "Custom" and not THEMES.Custom then
 		THEMES.Custom = {
 			Accent = Theme.Accent,
@@ -237,67 +232,19 @@ local function ApplyTheme(name)
 			Start  = Theme.Start,
 		}
 	end
-
-	local th = THEMES[name]
 	if not th then return false end
-
-	local oldAccent = COLORS.Accent
 	Theme = th
-	COLORS.Accent = th.Accent
-
-	-- Update objects created before the theme change. Most of the library
-	-- uses COLORS.Accent directly, so replacing the old accent on existing
-	-- GUI objects keeps the whole interface visually consistent.
-	pcall(function()
-		if ScreenGui then
-			for _, obj in ipairs(ScreenGui:GetDescendants()) do
-				if obj:IsA("GuiObject") then
-					if ColorSame(obj.BackgroundColor3, oldAccent) then
-						obj.BackgroundColor3 = th.Accent
-					end
-					if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-						if ColorSame(obj.TextColor3, oldAccent) then
-							obj.TextColor3 = th.Accent
-						end
-					end
-					if obj:IsA("ScrollingFrame") and ColorSame(obj.ScrollBarImageColor3, oldAccent) then
-						obj.ScrollBarImageColor3 = th.Accent
-					end
-				end
-				if obj:IsA("UIStroke") and ColorSame(obj.Color, oldAccent) then
-					obj.Color = th.Accent
-				end
-			end
-		end
-	end)
-
 	for _, bind in ipairs(ThemeBinds) do
 		pcall(function()
-			if bind.obj and bind.obj.Parent then
-				bind.obj[bind.prop] = th[bind.kind]
-			end
+			if bind.obj and bind.obj.Parent then bind.obj[bind.prop] = th[bind.kind] end
 		end)
 	end
-
 	for _, grad in ipairs(GradientBinds) do
-		pcall(function()
-			if grad and grad.Parent then
-				grad.Color = ColorSequence.new(th.Start, th.Accent)
-			end
-		end)
+		pcall(function() grad.Color = ColorSequence.new(th.Start, th.Accent) end)
 	end
-
-	for _, fn in ipairs(ToggleRenderers) do
-		pcall(fn)
-	end
-
-	pcall(function()
-		if ActiveESP then ActiveESP.FillColor = th.Accent end
-	end)
-	pcall(function()
-		if StaticGlow then StaticGlow() end
-	end)
-
+	for _, fn in ipairs(ToggleRenderers) do pcall(fn) end
+	pcall(function() if ActiveESP then ActiveESP.FillColor = th.Accent end end)
+	pcall(function() if StaticGlow then StaticGlow() end end)
 	return true
 end
 
@@ -306,30 +253,19 @@ local function Protect(gui)
 	pcall(function()
 		if syn and syn.protect_gui then syn.protect_gui(gui) end
 	end)
-
 	local parented = false
-	if type(gethui) == "function" then
-		local ok, hui = pcall(gethui)
-		if ok and hui then
-			local setOk = pcall(function() gui.Parent = hui end)
-			parented = setOk and gui.Parent == hui
-		end
-	end
-
+	pcall(function()
+		if gethui then gui.Parent = gethui() parented = true end
+	end)
 	if not parented then
-		local coreGui = game:GetService("CoreGui")
-		local ok = pcall(function() gui.Parent = coreGui end)
-		parented = ok and gui.Parent == coreGui
-	end
-
-	if not parented then
-		pcall(function()
+		local ok = pcall(function() gui.Parent = game:GetService("CoreGui") end)
+		if not ok or not gui.Parent then
 			gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-		end)
+		end
 	end
 end
 
-ScreenGui = New("ScreenGui", {
+local ScreenGui = New("ScreenGui", {
 	Name           = "SkyLineHub",
 	ResetOnSpawn   = false,
 	IgnoreGuiInset = true,
@@ -768,7 +704,7 @@ local function RequestInput(titleText, placeholderText, onSubmit, onCancel)
 	})
 	local cancelBtn = card.CancelBtn
 	Corner(cancelBtn, S(8))
-	Bind(cancelBtn.Activated, function()
+	cancelBtn.Activated:Connect(function()
 		closeAll()
 		SafeCall(onCancel)
 	end)
@@ -782,11 +718,11 @@ local function RequestInput(titleText, placeholderText, onSubmit, onCancel)
 	})
 	local okBtn = card.OkBtn
 	Corner(okBtn, S(8))
-	Bind(okBtn.Activated, confirm)
-	Bind(box.FocusLost, function(enterPressed)
+	okBtn.Activated:Connect(confirm)
+	box.FocusLost:Connect(function(enterPressed)
 		if enterPressed then confirm() end
 	end)
-	Bind(scrim.Activated, closeAll)
+	scrim.Activated:Connect(closeAll)
 	return closeAll
 end
 
@@ -813,37 +749,11 @@ local function GetHumanoid()
 	return char:FindFirstChildOfClass("Humanoid")
 end
 
-local MovementSnapshot = {
-	Humanoid = nil,
-	WalkSpeed = nil,
-	JumpPower = nil,
-	UseJumpPower = nil,
-}
-
-local function CaptureMovementSnapshot(hum)
-	if not hum or MovementSnapshot.Humanoid == hum then return end
-	MovementSnapshot.Humanoid = hum
-	MovementSnapshot.WalkSpeed = hum.WalkSpeed
-	MovementSnapshot.JumpPower = hum.JumpPower
-	MovementSnapshot.UseJumpPower = hum.UseJumpPower
-end
-
-local function ClearMovementSnapshot()
-	MovementSnapshot.Humanoid = nil
-	MovementSnapshot.WalkSpeed = nil
-	MovementSnapshot.JumpPower = nil
-	MovementSnapshot.UseJumpPower = nil
-end
-
 local function ApplySpeed()
 	pcall(function()
 		local hum = GetHumanoid()
-		if not hum then return end
-		if Features.Speed.On then
-			CaptureMovementSnapshot(hum)
-			hum.WalkSpeed = Features.Speed.Value
-		elseif MovementSnapshot.Humanoid == hum and MovementSnapshot.WalkSpeed ~= nil then
-			hum.WalkSpeed = MovementSnapshot.WalkSpeed
+		if hum then
+			hum.WalkSpeed = Features.Speed.On and Features.Speed.Value or 16
 		end
 	end)
 end
@@ -851,16 +761,9 @@ end
 local function ApplyJump()
 	pcall(function()
 		local hum = GetHumanoid()
-		if not hum then return end
-		if Features.Jump.On then
-			CaptureMovementSnapshot(hum)
+		if hum then
 			hum.UseJumpPower = true
-			hum.JumpPower = Features.Jump.Value
-		elseif MovementSnapshot.Humanoid == hum and MovementSnapshot.JumpPower ~= nil then
-			hum.JumpPower = MovementSnapshot.JumpPower
-			if MovementSnapshot.UseJumpPower ~= nil then
-				hum.UseJumpPower = MovementSnapshot.UseJumpPower
-			end
+			hum.JumpPower = Features.Jump.On and Features.Jump.Value or 50
 		end
 	end)
 end
@@ -897,7 +800,6 @@ local BoostSnap = nil
 local function SetBoost(on)
 	pcall(function()
 		if on then
-			if BoostSnap then return end
 			BoostSnap = {
 				Shadows    = Lighting.GlobalShadows,
 				FogEnd     = Lighting.FogEnd,
@@ -914,16 +816,13 @@ local function SetBoost(on)
 			end
 		else
 			if BoostSnap then
-				local snap = BoostSnap
-				BoostSnap = nil
 				pcall(function()
-					Lighting.GlobalShadows = snap.Shadows
-					Lighting.FogEnd = snap.FogEnd
-					Lighting.Brightness = snap.Brightness
-					for _, d in ipairs(snap.Effects) do
-						if d and d.Parent then d.Enabled = true end
-					end
+					Lighting.GlobalShadows = BoostSnap.Shadows
+					Lighting.FogEnd = BoostSnap.FogEnd
+					Lighting.Brightness = BoostSnap.Brightness
+					for _, d in ipairs(BoostSnap.Effects) do d.Enabled = true end
 				end)
+				BoostSnap = nil
 			end
 		end
 	end)
@@ -995,7 +894,6 @@ end)
 
 Bind(LocalPlayer.CharacterAdded, function(char)
 	task.wait(0.4)
-	ClearMovementSnapshot()
 	if Features.Speed.On then ApplySpeed() end
 	if Features.Jump.On then ApplyJump() end
 	if Features.ESP then SetESP(true) end
@@ -1523,7 +1421,7 @@ local function CreatePage(def, index)
 		end)
 		local layout = ListLayout(host, S(8))
 		Pad(host, S(14), S(12), S(14), S(14))
-		Bind(layout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
+		layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 			host.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + S(26))
 		end)
 		host.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + S(26))
@@ -1567,7 +1465,6 @@ end
 SelectTab = function(idx)
 	if BusyUI or Hidden or Switching then return end
 	if not Tabs[idx] or idx == ActiveIdx then return end
-	Switching = true
 	local oldT = Tabs[ActiveIdx]
 	local newT = Tabs[idx]
 	ActiveIdx = idx
@@ -1758,7 +1655,6 @@ local function AddToggle(host, cfg)
 			TextColor3       = COLORS.SubText,
 			TextSize         = S(10),
 			AutoButtonColor  = false,
-			Parent           = row,
 		})
 		Corner(badge, S(6))
 		StrokeOf(badge)
@@ -2170,7 +2066,11 @@ Bind(UserInputService.InputBegan, function(input)
 		local ps = dd.Handle.Popup.AbsoluteSize
 		inPop = m.X >= pp.X and m.X <= pp.X + ps.X and m.Y >= pp.Y and m.Y <= pp.Y + ps.Y
 	end
-	if inBox or inPop then return end
+	if inBox then
+		if dd.open then dd.Close() else dd.Open() end
+		return
+	end
+	if inPop then return end
 	CloseOpenDropdown()
 end)
 
@@ -2602,10 +2502,6 @@ local function AddDropdown(host, cfg)
 		})
 
 		RestyleItems(dd.Handle, function(o)
-			if isMulti then return selSet[o] == true end
-			return o == sel
-		end)
-
 		dd.ScrollConn = Bind(RunService.Heartbeat, function()
 			if dd.open and dd.Handle and dd.Handle.Popup.Parent then
 				local abs = box.AbsolutePosition
@@ -2615,17 +2511,19 @@ local function AddDropdown(host, cfg)
 					pcall(dd.Close)
 					return
 				end
-
 				local pop = dd.Handle.Popup
-				local popH = pop.AbsoluteSize.Y
+				local popW, popH = pop.AbsoluteSize.X, pop.AbsoluteSize.Y
+				local x = math.min(abs.X, cAbs.X + cSize.X - popW - S(10))
 				local y = abs.Y + box.AbsoluteSize.Y + S(6)
 				if y + popH > cAbs.Y + cSize.Y - S(10) then
 					local above = abs.Y - popH - S(6)
-					if above > cAbs.Y + S(10) then
-						pop.Position = UDim2.new(0, 0, 0, -popH - S(6))
-					end
+					y = (above > cAbs.Y + S(10)) and above or math.max(cAbs.Y + S(10), math.min(y, cAbs.Y + cSize.Y - popH - S(10)))
 				end
+				-- follow отключён: попап живёт внутри строки и двигается сам
 			end
+		end)
+			if isMulti then return selSet[o] == true end
+			return o == sel
 		end)
 
 		pcall(function()
@@ -3767,11 +3665,11 @@ do
 		end
 		New("TextButton", { Name = "CCancel", Text = "Cancel", AutoButtonColor = false, BackgroundColor3 = COLORS.Secondary, BorderSizePixel = 0, Font = FONT_MED, TextSize = S(12), TextColor3 = COLORS.SubText, Position = UDim2.new(0, S(16), 1, -S(44)), Size = UDim2.fromOffset(S(120), S(30)), ZIndex = 142, Parent = card })
 		Corner(card.CCancel, S(8))
-		Bind(card.CCancel.Activated, function() closeAllC() end)
+		card.CCancel.Activated:Connect(function() closeAllC() end)
 		New("TextButton", { Name = "CApply", Text = "Apply", AutoButtonColor = false, BackgroundColor3 = COLORS.Accent, BorderSizePixel = 0, Font = FONT_BOLD, TextSize = S(12), TextColor3 = C(20, 30, 40), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -S(16), 1, -S(44)), Size = UDim2.fromOffset(S(120), S(30)), ZIndex = 142, Parent = card })
 		Corner(card.CApply, S(8))
-		Bind(card.CApply.Activated, applyC)
-		Bind(scrim.Activated, function() closeAllC() end)
+		card.CApply.Activated:Connect(applyC)
+		scrim.Activated:Connect(function() closeAllC() end)
 		closeAllC = function()
 			Tween(scrim, 0.2, { BackgroundTransparency = 1 })
 			task.delay(0.21, function() pcall(function() scrim:Destroy() end) end)
@@ -4141,7 +4039,6 @@ Library.Destroy = function(_)
 		Features.Spin.On   = false
 		ApplySpeed()
 		ApplyJump()
-		ClearMovementSnapshot()
 		SetESP(false)
 		SetBoost(false)
 	end)
