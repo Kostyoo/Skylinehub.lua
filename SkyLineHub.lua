@@ -167,6 +167,7 @@ local function Spawn(fn)
 end
 
 local HeavyOff = false
+local AnimSpeed = 1
 
 local function SafeCall(fn, ...)
 	if type(fn) ~= "function" then return nil end
@@ -180,6 +181,7 @@ local function Tween(obj, dur, props, style, dir)
 	if not obj then return nil end
 	dur = dur or 0.25
 	if HeavyOff then dur = math.min(dur, 0.12) style = Enum.EasingStyle.Linear dir = nil end
+	dur = dur * (AnimSpeed or 1)
 	local ok, tw = pcall(function()
 		return TweenService:Create(obj,
 			TweenInfo.new(dur, style or Enum.EasingStyle.Quint, dir or Enum.EasingDirection.Out),
@@ -222,6 +224,14 @@ local ToggleRenderers = {} -- fn() перерисовка тумблеров п�
 
 local function ApplyTheme(name)
 	local th = THEMES[name]
+	if name == "Custom" and not THEMES.Custom then
+		THEMES.Custom = {
+			Accent = Theme.Accent,
+			GlowA  = Theme.GlowA,
+			GlowB  = Theme.GlowB,
+			Start  = Theme.Start,
+		}
+	end
 	if not th then return false end
 	Theme = th
 	for _, bind in ipairs(ThemeBinds) do
@@ -365,6 +375,8 @@ local ToastLayer = New("Frame", {
 
 
 -- [9] NOTIFICATIONS ---------------------------------------------------
+local BackBlur = New("BlurEffect", { Name = "SkyLineBlur", Size = 0, Parent = Lighting })
+
 local ToastList = {}
 
 local function RelayoutToasts()
@@ -503,6 +515,9 @@ local function RegFlag(name, ctrl)
 end
 local RegisterFlag = RegFlag -- алиас (фабрики используют это имя)
 
+local Keybinds = {}
+local CapturingBind = nil
+
 local function ScheduleAutoSave()
 	if not AutoSaveOn or LoadingFlags then return end
 	ASToken = ASToken + 1
@@ -569,6 +584,29 @@ LoadPreset = function(name, quiet)
 	end
 	LoadingFlags = false
 	if not quiet then Notify("SkyLine Hub", "Пресет загружен: " .. name) end
+	return true
+end
+
+local function ExportPresetString()
+	local data = { version = "1.0", flags = {} }
+	for flagName, ctrl in pairs(Flags) do
+		local ok, v = pcall(function() return ctrl.Get() end)
+		if ok and v ~= nil then data.flags[flagName] = v end
+	end
+	local okEnc, json = pcall(function() return HttpService:JSONEncode(data) end)
+	return okEnc and json or nil
+end
+
+local function ImportPresetString(json)
+	if type(json) ~= "string" or #json == 0 then return false end
+	local okDec, data = pcall(function() return HttpService:JSONDecode(json) end)
+	if not okDec or type(data) ~= "table" or type(data.flags) ~= "table" then return false end
+	LoadingFlags = true
+	for flagName, value in pairs(data.flags) do
+		local ctrl = Flags[flagName]
+		if ctrl and type(ctrl.Set) == "function" then pcall(ctrl.Set, ctrl, value) end
+	end
+	LoadingFlags = false
 	return true
 end
 
@@ -1336,6 +1374,51 @@ local function CreatePage(def, index)
 			ScrollBarImageTransparency = 0.35,
 			Parent                 = page,
 		})
+		local searchHolder = New("Frame", {
+			Name                   = "SearchBar",
+			BackgroundTransparency = 1,
+			BorderSizePixel        = 0,
+			Size                   = UDim2.new(1, 0, 0, S(34)),
+			LayoutOrder            = 0,
+			Parent                 = host,
+		})
+		local searchInner = New("Frame", {
+			BackgroundColor3 = COLORS.Secondary,
+			BorderSizePixel  = 0,
+			Size             = UDim2.new(1, 0, 1, 0),
+			Parent           = searchHolder,
+		})
+		Corner(searchInner, S(9))
+		StrokeOf(searchInner)
+		local searchBox = New("TextBox", {
+			BackgroundTransparency = 1,
+			Position               = UDim2.fromOffset(S(12), 0),
+			Size                   = UDim2.new(1, -S(24), 1, 0),
+			Font                   = FONT_MED,
+			Text                   = "",
+			PlaceholderText        = "Search...",
+			PlaceholderColor3      = COLORS.SubText,
+			TextColor3             = COLORS.Text,
+			TextSize               = S(13),
+			TextXAlignment         = Enum.TextXAlignment.Left,
+			ClearTextOnFocus       = false,
+			Parent                 = searchInner,
+		})
+		local function ApplyFilter(q)
+			q = string.lower(tostring(q or ""))
+			for _, child in ipairs(host:GetChildren()) do
+				if child:IsA("Frame") or child:IsA("TextButton") or child:IsA("CanvasGroup") then
+					local text = ""
+					for _, d in ipairs(child:GetDescendants()) do
+						if d:IsA("TextLabel") then text = text .. " " .. tostring(d.Text) end
+					end
+					child.Visible = (#q == 0) or (string.find(string.lower(text), q, 1, true) ~= nil)
+				end
+			end
+		end
+		Bind(searchBox:GetPropertyChangedSignal("Text"), function()
+			pcall(ApplyFilter, searchBox.Text)
+		end)
 		local layout = ListLayout(host, S(8))
 		Pad(host, S(14), S(12), S(14), S(14))
 		layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
@@ -1557,6 +1640,42 @@ local function AddToggle(host, cfg)
 	Bind(row.Activated, function()
 		ctrl.Set(not st.State)
 	end)
+	RegisterFlag(cfg.Flag, ctrl)
+	if cfg.Key ~= nil or cfg.KeyFlag ~= nil then
+		local keyName = cfg.Key and cfg.Key.Name or nil
+		local badge = New("TextButton", {
+			Name             = "Keybind",
+			BackgroundColor3 = COLORS.Background,
+			BorderSizePixel  = 0,
+			AnchorPoint      = Vector2.new(1, 0.5),
+			Position         = UDim2.new(1, -S(66), 0.5, 0),
+			Size             = UDim2.fromOffset(S(46), S(20)),
+			Text             = keyName or "none",
+			Font             = FONT_MED,
+			TextColor3       = COLORS.SubText,
+			TextSize         = S(10),
+			AutoButtonColor  = false,
+		})
+		Corner(badge, S(6))
+		StrokeOf(badge)
+		local function SetKey(name)
+			keyName = name
+			badge.Text = name or "none"
+			for _, kb in ipairs(Keybinds) do
+				if kb.id == ctrl then kb.Key = name end
+			end
+			ScheduleAutoSave()
+		end
+		ctrl.SetKey = SetKey
+		Bind(badge.Activated, function()
+			badge.Text = "..."
+			CapturingBind = { SetKey = SetKey }
+		end)
+		Insert(Keybinds, { id = ctrl, Key = keyName, Toggle = function() ctrl.Set(not ctrl.Get()) end })
+		if cfg.KeyFlag then
+			RegisterFlag(cfg.KeyFlag, { Get = function() return keyName end, Set = function(v) pcall(SetKey, tostring(v)) end })
+		end
+	end
 	RegisterFlag(cfg.Flag, ctrl)
 	Render(true)
 	return ctrl
@@ -1949,6 +2068,25 @@ end)
 Bind(UserInputService.InputBegan, function(input)
 	if input.KeyCode == Enum.KeyCode.Escape then
 		CloseOpenDropdown()
+	end
+end)
+
+Bind(UserInputService.InputBegan, function(input, processed)
+	if CapturingBind then
+		if input.KeyCode == Enum.KeyCode.Escape then
+			CapturingBind.SetKey(nil)
+		elseif input.KeyCode ~= Enum.KeyCode.Unknown then
+			CapturingBind.SetKey(input.KeyCode.Name)
+		end
+		CapturingBind = nil
+		return
+	end
+	if processed then return end
+	for _, kb in ipairs(Keybinds) do
+		if kb.Key and input.KeyCode.Name == kb.Key then
+			pcall(kb.Toggle)
+			break
+		end
 	end
 end)
 
@@ -3034,6 +3172,44 @@ do
 		Parent                 = fpsRow,
 	})
 
+	New("TextLabel", {
+		BackgroundTransparency = 1,
+		Position               = UDim2.fromOffset(S(20), S(192)),
+		Size                   = UDim2.new(1, -S(40), 0, S(14)),
+		Font                   = FONT_MED,
+		Text                   = "FPS (last 12s)",
+		TextColor3             = COLORS.SubText,
+		TextSize               = S(11),
+		TextXAlignment         = Enum.TextXAlignment.Left,
+		Parent                 = host,
+	})
+	local graph = New("Frame", {
+		Name             = "FpsGraph",
+		BackgroundColor3 = COLORS.Secondary,
+		BorderSizePixel  = 0,
+		Position         = UDim2.fromOffset(S(20), S(210)),
+		Size             = UDim2.new(1, -S(40), 0, S(46)),
+		Parent           = host,
+	})
+	Corner(graph, S(10))
+	StrokeOf(graph)
+	Pad(graph, S(6), S(6), S(6), S(6))
+	local BARS_N = 24
+	local hist = {}
+	local gBars = {}
+	for gi = 1, BARS_N do
+		local bar = New("Frame", {
+			BackgroundColor3       = COLORS.Accent,
+			BackgroundTransparency = 0.85,
+			BorderSizePixel        = 0,
+			AnchorPoint            = Vector2.new(0, 1),
+			Position               = UDim2.new((gi - 1) / BARS_N, S(1), 1, 0),
+			Size                   = UDim2.new(1 / BARS_N, -S(2), 0, 0),
+			Parent                 = graph,
+		})
+		gBars[gi] = bar
+	end
+	local gTick = 0
 	local updT = 0
 	Bind(RunService.Heartbeat, function(dt)
 		updT = updT + dt
@@ -3046,6 +3222,18 @@ do
 			if fpsVal.Parent then
 				fpsVal.Text = tostring(CurrentFPS)
 				fpsVal.TextColor3 = CurrentFPS < 30 and COLORS.Danger or COLORS.Text
+			end
+			gTick = gTick + 1
+			if gTick % 2 == 0 then
+				hist[#hist + 1] = CurrentFPS
+				if #hist > BARS_N then table.remove(hist, 1) end
+				for gi = 1, BARS_N do
+					local v = hist[#hist - (BARS_N - gi)] or 0
+					local hgt = clamp(v / 120, 0.03, 1) * (S(46) - S(12))
+					gBars[gi].Size = UDim2.new(1 / BARS_N, -S(2), 0, hgt)
+					gBars[gi].BackgroundColor3 = v < 30 and COLORS.Danger or (v < 50 and C(240, 200, 100) or COLORS.Accent)
+					gBars[gi].BackgroundTransparency = v == 0 and 0.85 or 0.15
+				end
 			end
 		end)
 	end)
@@ -3337,8 +3525,33 @@ do
 		Flag     = "HeavyEffects",
 		Callback = function(on)
 			HeavyOff = on
+			if on then pcall(function() BackBlur.Size = 0 end) end
 			if on and StaticGlow then StaticGlow() end
 			if on then Notify("Settings", "Тяжёлые эффекты отключены") end
+		end,
+	})
+
+	settings:AddToggle({
+		Title    = "UI Animations",
+		Default  = true,
+		Flag     = "UIAnimations",
+		Callback = function(on)
+			HeavyOff = not on
+			if HeavyOff and StaticGlow then StaticGlow() end
+			if HeavyOff then pcall(function() BackBlur.Size = 0 end) end
+		end,
+	})
+
+	settings:AddSlider({
+		Title     = "Animation Speed",
+		Min       = 0.25,
+		Max       = 2,
+		Default   = 1,
+		Increment = 0.25,
+		Suffix    = "x",
+		Flag      = "AnimSpeed",
+		Callback  = function(v)
+			AnimSpeed = v
 		end,
 	})
 
@@ -3346,6 +3559,7 @@ do
 	for themeName in pairs(THEMES) do
 		themeNames[#themeNames + 1] = themeName
 	end
+	themeNames[#themeNames + 1] = "Custom"
 	table.sort(themeNames)
 
 	settings:AddDropdown({
@@ -3359,6 +3573,86 @@ do
 				Notify("Settings", "Тема: " .. tostring(sel))
 				pcall(SavePreset, "_autosave", true)
 			end
+		end,
+	})
+
+	local function OpenColorPicker()
+		local cur = (THEMES.Custom and THEMES.Custom.Accent) or Theme.Accent
+		local vals = { math.floor(cur.R * 255 + 0.5), math.floor(cur.G * 255 + 0.5), math.floor(cur.B * 255 + 0.5) }
+		local scrim = New("TextButton", { Text = "", AutoButtonColor = false, BackgroundColor3 = C(0,0,0), BackgroundTransparency = 1, BorderSizePixel = 0, Size = UDim2.fromScale(1,1), ZIndex = 140, Parent = PopupLayer })
+		Tween(scrim, 0.2, { BackgroundTransparency = 0.45 })
+		local card = New("CanvasGroup", { BackgroundColor3 = COLORS.Background, BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5,0.5), Position = UDim2.fromScale(0.5,0.46), Size = UDim2.fromOffset(S(300), S(212)), GroupTransparency = 1, ZIndex = 141, Parent = PopupLayer })
+		Corner(card, S(14))
+		StrokeOf(card)
+		Tween(card, 0.22, { GroupTransparency = 0 })
+		New("TextLabel", { BackgroundTransparency = 1, Position = UDim2.fromOffset(S(18), S(12)), Size = UDim2.new(1, -S(36), 0, S(18)), Font = FONT_BOLD, Text = "Accent Color", TextColor3 = COLORS.Text, TextSize = S(14), TextXAlignment = Enum.TextXAlignment.Left, Parent = card })
+		local preview = New("Frame", { BackgroundColor3 = C(vals[1], vals[2], vals[3]), BorderSizePixel = 0, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -S(16), 0, S(12)), Size = UDim2.fromOffset(S(40), S(40)), Parent = card })
+		Corner(preview, S(10))
+		StrokeOf(preview)
+		local closeAllC = nil
+		local chans = { { "R", C(255, 90, 90) }, { "G", C(90, 235, 130) }, { "B", C(110, 160, 255) } }
+		for ci, ch in ipairs(chans) do
+			local y = S(62) + (ci - 1) * S(36)
+			New("TextLabel", { BackgroundTransparency = 1, Position = UDim2.fromOffset(S(18), y), Size = UDim2.fromOffset(S(20), S(14)), Font = FONT_BOLD, Text = ch[1], TextColor3 = ch[2], TextSize = S(12), Parent = card })
+			local bar = New("Frame", { BackgroundColor3 = COLORS.Secondary, BorderSizePixel = 0, Position = UDim2.new(0, S(46), 0, y - S(2)), Size = UDim2.new(1, -S(120), 0, S(16)), Parent = card })
+			Corner(bar, S(8))
+			StrokeOf(bar)
+			local fill = New("Frame", { BackgroundColor3 = ch[2], BackgroundTransparency = 0.25, BorderSizePixel = 0, Size = UDim2.new(0, 0, 1, 0), ZIndex = 2, Parent = bar })
+			Corner(fill, S(8))
+			local valLbl = New("TextLabel", { BackgroundTransparency = 1, AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -S(16), 0, y), Size = UDim2.fromOffset(S(34), S(14)), Font = FONT_BOLD, Text = tostring(vals[ci]), TextColor3 = COLORS.Text, TextSize = S(12), TextXAlignment = Enum.TextXAlignment.Right, Parent = card })
+			local function setFromX(x)
+				local rel = clamp((x - bar.AbsolutePosition.X) / math.max(bar.AbsoluteSize.X, 1), 0, 1)
+				vals[ci] = math.floor(rel * 255 + 0.5)
+				fill.Size = UDim2.new(rel, 0, 1, 0)
+				valLbl.Text = tostring(vals[ci])
+				preview.BackgroundColor3 = C(vals[1], vals[2], vals[3])
+			end
+			fill.Size = UDim2.new(vals[ci] / 255, 0, 1, 0)
+			local down = false
+			Bind(bar.InputBegan, function(io)
+				local tt = io.UserInputType
+				if tt == Enum.UserInputType.MouseButton1 or tt == Enum.UserInputType.Touch then down = true setFromX(UserInputService:GetMouseLocation().X) end
+			end)
+			Bind(UserInputService.InputChanged, function(io)
+				if not down then return end
+				local tt = io.UserInputType
+				if tt == Enum.UserInputType.MouseMovement or tt == Enum.UserInputType.Touch then setFromX(UserInputService:GetMouseLocation().X) end
+			end)
+			Bind(UserInputService.InputEnded, function(io)
+				local tt = io.UserInputType
+				if tt == Enum.UserInputType.MouseButton1 or tt == Enum.UserInputType.Touch then down = false end
+			end)
+		end
+		local function applyC()
+			local acc = C(vals[1], vals[2], vals[3])
+			THEMES.Custom = {
+				Accent = acc,
+				GlowA  = acc:Lerp(C(96, 88, 235), 0.4),
+				GlowB  = acc:Lerp(C(140, 235, 240), 0.3),
+				Start  = acc:Lerp(COLORS.Secondary, 0.5),
+			}
+			closeAllC()
+			if Flags.SelectedTheme then pcall(Flags.SelectedTheme.Set, Flags.SelectedTheme, "Custom") end
+		end
+		New("TextButton", { Name = "CCancel", Text = "Cancel", AutoButtonColor = false, BackgroundColor3 = COLORS.Secondary, BorderSizePixel = 0, Font = FONT_MED, TextSize = S(12), TextColor3 = COLORS.SubText, Position = UDim2.new(0, S(16), 1, -S(44)), Size = UDim2.fromOffset(S(120), S(30)), ZIndex = 142, Parent = card })
+		Corner(card.CCancel, S(8))
+		card.CCancel.Activated:Connect(function() closeAllC() end)
+		New("TextButton", { Name = "CApply", Text = "Apply", AutoButtonColor = false, BackgroundColor3 = COLORS.Accent, BorderSizePixel = 0, Font = FONT_BOLD, TextSize = S(12), TextColor3 = C(20, 30, 40), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -S(16), 1, -S(44)), Size = UDim2.fromOffset(S(120), S(30)), ZIndex = 142, Parent = card })
+		Corner(card.CApply, S(8))
+		card.CApply.Activated:Connect(applyC)
+		scrim.Activated:Connect(function() closeAllC() end)
+		closeAllC = function()
+			Tween(scrim, 0.2, { BackgroundTransparency = 1 })
+			task.delay(0.21, function() pcall(function() scrim:Destroy() end) end)
+			Tween(card, 0.18, { GroupTransparency = 1 })
+			task.delay(0.19, function() pcall(function() card:Destroy() end) end)
+		end
+	end
+
+	settings:AddButton({
+		Title    = "Accent Color",
+		Callback = function()
+			OpenColorPicker()
 		end,
 	})
 
@@ -3394,6 +3688,31 @@ do
 		Flag     = "AutoSave",
 		Callback = function(on)
 			AutoSaveOn = on
+		end,
+	})
+
+	settings:AddButton({
+		Title    = "Export Config",
+		Callback = function()
+			local json = ExportPresetString()
+			if json and Copy(json) then
+				Notify("Export", "Конфиг скопирован в буфер")
+			else
+				Notify("Export", "Не удалось скопировать")
+			end
+		end,
+	})
+
+	settings:AddButton({
+		Title    = "Import Config",
+		Callback = function()
+			RequestInput("Import Config", "Вставьте JSON конфига", function(txt)
+				if ImportPresetString(txt) then
+					Notify("Import", "Конфиг применён")
+				else
+					Notify("Import", "Некорректный JSON")
+				end
+			end)
 		end,
 	})
 
@@ -3437,6 +3756,7 @@ ShowInterface = function()
 
 	-- плавно проявляем амбиент (затемнение + северное сияние)
 	Tween(AmbientDim, 0.7, { BackgroundTransparency = 0.38 })
+	if not HeavyOff then Tween(BackBlur, 0.5, { Size = 12 }) end
 	for _, e in ipairs(GlowEdges) do
 		Tween(e.Frame, 0.9, { BackgroundTransparency = e.Base })
 	end
@@ -3483,6 +3803,7 @@ HideInterface = function()
 
 	-- плавно гасим амбиент вместе с меню
 	Tween(AmbientDim, 0.55, { BackgroundTransparency = 1 })
+	Tween(BackBlur, 0.4, { Size = 0 })
 	for _, e in ipairs(GlowEdges) do
 		Tween(e.Frame, 0.55, { BackgroundTransparency = 1 })
 	end
@@ -3635,6 +3956,7 @@ local function RunLoading()
 		Tween(scrim, 0.4, { BackgroundTransparency = 1 })
 
 		Tween(AmbientDim, 0.7, { BackgroundTransparency = 0.38 })
+	if not HeavyOff then Tween(BackBlur, 0.5, { Size = 12 }) end
 
 		for i, e in ipairs(GlowEdges) do
 			task.delay(i * 0.06, function()
@@ -3699,6 +4021,7 @@ Library.Destroy = function(_)
 	end
 	for i = #Threads, 1, -1 do Threads[i] = nil end
 	for i = #Conns, 1, -1 do Conns[i] = nil end
+	pcall(function() BackBlur:Destroy() end)
 	pcall(function() ScreenGui:Destroy() end)
 	local g = _G
 	pcall(function() if getgenv then g = getgenv() end end)
